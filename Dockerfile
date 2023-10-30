@@ -8,13 +8,10 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
     curl \
     gnupg \
-    apt-transport-https && \
-    curl -sS https://deb.liquidsoap.info/pubkey.gpg | apt-key add - && \
-    echo "deb https://deb.liquidsoap.info/debian bullseye main" > /etc/apt/sources.list.d/liquidsoap.list && \
-    apt-get update
-
-# Install Icecast and Liquidsoap with necessary codecs
-RUN apt-get install -y icecast2 liquidsoap liquidsoap-plugin-all && \
+    apt-transport-https \
+    icecast2 \
+    liquidsoap \
+    ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy the Liquidsoap script and assets
@@ -22,10 +19,10 @@ COPY ./radio.liq /radio.liq
 COPY ./assets/ /assets/
 
 # Copy the Icecast configuration
+COPY start.sh /start.sh
 COPY icecast.xml /icecast.xml
 
 # Copy the startup script and make it executable
-COPY start.sh /start.sh
 RUN chmod +x /start.sh
 RUN useradd -ms /bin/bash radio
 RUN mkdir -p /var/log/icecast2 && chown -R radio:radio /var/log/icecast2
