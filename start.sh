@@ -1,5 +1,5 @@
 #!/bin/sh
-su - radio -c "icecast2 -c /icecast.xml";
+# su - radio -c "icecast2 -c /icecast.xml";
 
 # Start Icecast2 in the background
 icecast2 -c /icecast.xml &

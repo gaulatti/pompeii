@@ -1,8 +1,11 @@
 # Define the MP3 file's location
-mp3_file = "/assets/song.mp3"
+# mp3_file = "https://cdn-oxozon.s3.us-west-2.amazonaws.com/prisioneros.mp3"
 
 # Create a single playback source from the MP3 file
-source = single(mp3_file)
+source = mksafe(input.https("https://cdn.oxozon.io/prisioneros.mp3"))
+
+set("server.http", true)
+set("server.http.port", 8080)
 
 # Output the source to the Icecast server
 output.icecast(
