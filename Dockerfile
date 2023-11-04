@@ -1,18 +1,39 @@
-# Use Debian as the base image
-FROM debian:bullseye-slim
+# Use Ubuntu as the base image
+FROM ubuntu:mantic
 
-# Set environment variables to non-interactive (this ensures Debian doesn't prompt for user input during installation)
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Add the Liquidsoap repository for the latest version and MP3 support
+# Install necessary tools and software
 RUN apt-get update && apt-get install -y \
     curl \
     gnupg \
     apt-transport-https \
+    software-properties-common \
     icecast2 \
-    liquidsoap \
+    opam \
+    m4 \
+    bubblewrap \
+    build-essential \
+    pkg-config \
+    libssl-dev \
+    libpcre3-dev \
+    libfdk-aac-dev \
+    libmad0-dev \
+    libmp3lame-dev \
+    libtag1-dev \
+    libfaad-dev \
+    libvorbis-dev \
     ffmpeg && \
     rm -rf /var/lib/apt/lists/*
+
+RUN add-apt-repository main
+RUN add-apt-repository universe
+RUN add-apt-repository restricted
+RUN add-apt-repository multiverse
+
+RUN echo $(lsb_release -a)
+RUN apt-get install -y libsamplerate0-dev \
+    libcurl4-gnutls-dev
 
 # Copy the project files
 COPY ./controller /controller
@@ -34,6 +55,13 @@ RUN chown -R radio:radio /controller /liquidsoap /icecast /assets
 # Switch to the radio user
 USER radio
 WORKDIR /home/radio
+
+# Initialize OPAM
+RUN opam init --disable-sandboxing -y
+RUN opam update
+# RUN opam install opam-depext -y
+RUN opam install taglib mad lame vorbis cry samplerate ocurl liquidsoap -y
+ENV PATH /home/radio/.opam/default/bin:$PATH
 
 # Install NVM and Node.js as the radio user
 ENV NVM_DIR /home/radio/.nvm
