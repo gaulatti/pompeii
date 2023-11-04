@@ -14,20 +14,37 @@ RUN apt-get update && apt-get install -y \
     ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy the Liquidsoap script and assets
-COPY ./radio.liq /radio.liq
-COPY ./assets/ /assets/
+# Copy the project files
+COPY ./controller /controller
+COPY ./liquidsoap /liquidsoap
+COPY ./icecast /icecast
+COPY ./assets /assets
+COPY ./start.sh /start.sh
 
-# Copy the Icecast configuration
-COPY start.sh /start.sh
-COPY icecast.xml /icecast.xml
-
-# Copy the startup script and make it executable
+# Make the start.sh script executable
 RUN chmod +x /start.sh
-RUN useradd -ms /bin/bash radio
-RUN mkdir -p /var/log/icecast2 && chown -R radio:radio /var/log/icecast2
 
+# Create a new user for running our application
+RUN useradd -ms /bin/bash radio
+
+# Create and set permissions for the icecast log directory
+RUN mkdir -p /var/log/icecast2 && chown -R radio:radio /var/log/icecast2
+RUN chown -R radio:radio /controller /liquidsoap /icecast /assets
+
+# Switch to the radio user
 USER radio
+WORKDIR /home/radio
+
+# Install NVM and Node.js as the radio user
+ENV NVM_DIR /home/radio/.nvm
+ENV NODE_VERSION 18
+ENV PATH $NVM_DIR/versions/node/v$NODE_VERSION/bin:$PATH
+
+RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.1/install.sh | bash \
+    && . $NVM_DIR/nvm.sh \
+    && nvm install $NODE_VERSION \
+    && nvm use $NODE_VERSION \
+    && nvm alias default $NODE_VERSION
 
 # Command to run when the container starts
 CMD ["/start.sh"]
