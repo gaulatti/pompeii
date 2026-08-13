@@ -48,7 +48,7 @@ const getLocalIp = (): string => {
  */
 const getGrpcTalkbackEndpoint = (): string => {
   if (process.env.SERVICE_FQDN) {
-    return `http://${process.env.TALKBACK_FQDN}:${grpcPort}`;
+    return `http://${process.env.SERVICE_FQDN}:${grpcPort}`;
   }
 
   const ip = getLocalIp();

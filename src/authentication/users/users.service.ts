@@ -63,15 +63,25 @@ export class UsersService {
    */
   async updateUser(payload: {
     sub: string;
-    given_name: string;
-    family_name: string;
+    given_name?: string;
+    family_name?: string;
     email: string;
     provider?: string;
-    identities: { providerName: string }[];
+    identities?: { providerName: string }[];
   }): Promise<User> {
-    const { sub, given_name: name, family_name, email, identities } = payload;
+    const {
+      sub,
+      given_name,
+      family_name,
+      email,
+      identities,
+      provider: payloadProvider,
+    } = payload;
 
-    const provider = identities.find(Boolean)?.providerName;
+    const name = given_name || 'Unknown';
+    const safeLastName = family_name || 'Unknown';
+
+    const provider = payloadProvider || identities?.find(Boolean)?.providerName;
     let user = await this.getUser(sub);
 
     if (!user) {
@@ -86,7 +96,7 @@ export class UsersService {
          */
         user = await this.user.create({
           name,
-          last_name: family_name,
+          last_name: safeLastName,
           email,
           slug: nanoid(),
         });
@@ -109,7 +119,7 @@ export class UsersService {
     if (!user.name || !user.last_name || !user.email) {
       updatedUser = await user.update({
         name: user.name || name,
-        last_name: user.last_name || family_name,
+        last_name: user.last_name || safeLastName,
         email: user.email || email,
       });
     }

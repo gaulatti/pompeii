@@ -1,0 +1,56 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Check out the code
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Step 2: Use Node 22
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Step 3: Configure AWS Credentials
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4.0.2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      # Step 4: Install NPM dependencies
+      - name: Install NPM dependencies
+        run: |
+          npm install
+
+      # Step 5: Build the React App
+      - name: Build the React App
+        env:
+          VITE_COGNITO_USER_POOL_ID: ${{ vars.VITE_COGNITO_USER_POOL_ID }}
+          VITE_COGNITO_CLIENT_ID: ${{ vars.VITE_COGNITO_CLIENT_ID }}
+          VITE_API_FQDN: ${{ vars.VITE_API_FQDN }}
+          VITE_USER_POOL_DOMAIN: ${{ vars.VITE_USER_POOL_DOMAIN }}
+          VITE_FQDN: ${{ vars.VITE_FQDN }}
+        run: |
+          npm run build
+
+      # Step 6: Upload to S3
+      - name: Upload to S3
+        run: |
+          aws s3 rm s3://${{ vars.BUCKET_NAME }} --recursive
+          aws s3 sync build/client/ s3://${{ vars.BUCKET_NAME }}
+
+      # Step 7: Invalidate CloudFront cache
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation --distribution-id ${{ vars.DISTRIBUTION_ID }} --paths "/index.html"

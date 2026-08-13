@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package pompeii;
+
+service PompeiiService {
+  rpc GetFeaturesByApplication (GetFeaturesByApplicationRequest) returns (GetFeaturesByApplicationResponse);
+  rpc Login (UserIdentity) returns (UserContext);
+}
+
+message GetFeaturesByApplicationRequest {
+  string slug = 1;
+}
+
+message GetFeaturesByApplicationResponse {
+  repeated Feature features = 1;
+}
+
+message Identity {
+  string dateCreated = 1;
+  string userId = 2;
+  string providerName = 3;
+  string providerType = 4;
+  string issuer = 5;
+  string primary = 6;
+}
+
+message UserIdentity {
+  string at_hash = 1;
+  string sub = 2;
+  repeated string cognito_groups = 3;
+  bool email_verified = 4;
+  string iss = 5;
+  string cognito_username = 6;
+  string given_name = 7;
+  string picture = 8;
+  string origin_jti = 9;
+  string aud = 10;
+  repeated Identity identities = 11;
+  string token_use = 12;
+  int64 auth_time = 13;
+  int64 exp = 14;
+  int64 iat = 15;
+  string family_name = 16;
+  string jti = 17;
+  string email = 18;
+  string key = 19;
+}
+
+message Team {
+  int32 id = 1;
+  string name = 2;
+  string slug = 3;
+}
+
+message Membership {
+  int32 id = 1;
+  int32 users_id = 2;
+  int32 teams_id = 3;
+  int32 role = 4;
+  Team team = 6;
+}
+
+message User {
+  int32 id = 1;
+  string email = 2;
+  string slug = 3;
+  string name = 4;
+  string last_name = 5;
+  string created_at = 6;
+  string updated_at = 7;
+  string deleted_at = 8;
+  repeated Membership memberships = 10;
+}
+
+message Feature {
+  string name = 1;
+  string slug = 2;
+  string default_value = 3;
+}
+
+message UserContext {
+  User me = 1;
+  repeated Feature features = 2;
+}

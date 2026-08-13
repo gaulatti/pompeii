@@ -1,7 +1,13 @@
 # compiled output
-/dist
-/node_modules
-/build
+dist
+node_modules
+build
+infrastructure/bin/*.js
+infrastructure/bin/*.d.ts
+infrastructure/lib/**/*.js
+infrastructure/lib/**/*.d.ts
+infrastructure/test/*.js
+infrastructure/test/*.d.ts
 
 # Logs
 logs
@@ -54,3 +60,6 @@ pids
 
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# pnpm workspace lockfile (tracked)
+!pnpm-lock.yaml

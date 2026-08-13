@@ -1,0 +1,155 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Test backend
+        working-directory: backend
+        run: npm test -- --runInBand
+
+      - name: Build backend
+        working-directory: backend
+        run: npm run build
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.DEPLOYMENT_TOKEN }}
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          pull: true
+          push: true
+          tags: ghcr.io/${{ github.repository }}-backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Deploy REST and gRPC service to host
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            export AWS_CREDS="$HOME/.aws"
+            sh -c '
+            set -eu
+
+            require_value() {
+              value="$1"
+              name="$2"
+              if [ -z "$value" ]; then
+                echo "Missing required GitHub secret or variable: $name"
+                exit 1
+              fi
+            }
+
+            require_value "${{ vars.HTTP_PORT }}" "HTTP_PORT"
+            require_value "${{ vars.GRPC_PORT }}" "GRPC_PORT"
+            require_value "${{ vars.AWS_REGION }}" "AWS_REGION"
+            require_value "${{ vars.LOGS_GROUP }}" "LOGS_GROUP"
+            require_value "${{ vars.ALLOWED_ORIGINS }}" "ALLOWED_ORIGINS"
+            require_value "${{ secrets.COGNITO_USER_POOL_ID }}" "COGNITO_USER_POOL_ID"
+            require_value "${{ secrets.COGNITO_CLIENT_ID }}" "COGNITO_CLIENT_ID"
+            require_value "${{ secrets.COGNITO_ALLOWED_CLIENT_IDS }}" "COGNITO_ALLOWED_CLIENT_IDS"
+            require_value "${{ secrets.DATABASE_URL }}" "DATABASE_URL"
+
+            docker login ghcr.io -u ${{ github.actor }} -p ${{ secrets.DEPLOYMENT_TOKEN }}
+            docker pull ghcr.io/${{ github.repository }}-backend:latest
+
+            docker stop pompeii-backend || true
+            docker rm pompeii-backend || true
+
+            LOG_STREAM_UUID=$(uuidgen)
+
+            docker run -d --name pompeii-backend \
+              -v "$AWS_CREDS:/root/.aws:ro" \
+              -p ${{ vars.HTTP_PORT }}:${{ vars.HTTP_PORT }} \
+              -p ${{ vars.GRPC_PORT }}:${{ vars.GRPC_PORT }} \
+              -e NODE_ENV=production \
+              -e HTTP_PORT="${{ vars.HTTP_PORT }}" \
+              -e GRPC_PORT="${{ vars.GRPC_PORT }}" \
+              -e AUTHZ_DECISION_CACHE_TTL_MS="${{ vars.AUTHZ_DECISION_CACHE_TTL_MS || '5000' }}" \
+              -e AUTHZ_DECISION_CACHE_MAX_ENTRIES="${{ vars.AUTHZ_DECISION_CACHE_MAX_ENTRIES || '10000' }}" \
+              -e AWS_REGION="${{ vars.AWS_REGION }}" \
+              -e ALLOWED_ORIGINS="${{ vars.ALLOWED_ORIGINS }}" \
+              -e SERVICE_FQDN="${{ vars.SERVICE_FQDN }}" \
+              -e ASSETS_BUCKET_NAME="${{ vars.ASSETS_BUCKET_NAME }}" \
+              -e DB_SSL="${{ vars.DB_SSL || 'true' }}" \
+              -e COGNITO_USER_POOL_ID="${{ secrets.COGNITO_USER_POOL_ID }}" \
+              -e COGNITO_CLIENT_ID="${{ secrets.COGNITO_CLIENT_ID }}" \
+              -e COGNITO_ALLOWED_CLIENT_IDS="${{ secrets.COGNITO_ALLOWED_CLIENT_IDS }}" \
+              -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+              --restart=always \
+              --log-driver=awslogs \
+              --log-opt awslogs-region=${{ vars.AWS_REGION }} \
+              --log-opt awslogs-group=${{ vars.LOGS_GROUP }} \
+              --log-opt awslogs-stream="$LOG_STREAM_UUID" \
+              ghcr.io/${{ github.repository }}-backend:latest
+
+            for attempt in $(seq 1 45); do
+              http_ready=false
+              grpc_ready=false
+
+              if docker exec pompeii-backend node -e "fetch(\"http://127.0.0.1:${{ vars.HTTP_PORT }}/authorization/health\").then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"; then
+                http_ready=true
+              fi
+
+              if docker exec pompeii-backend node -e "const socket=require(\"node:net\").connect(${{ vars.GRPC_PORT }},\"127.0.0.1\",()=>{socket.end();process.exit(0)});socket.setTimeout(1000,()=>{socket.destroy();process.exit(1)});socket.on(\"error\",()=>process.exit(1))"; then
+                grpc_ready=true
+              fi
+
+              if [ "$http_ready" = true ] && [ "$grpc_ready" = true ]; then
+                echo "Pompeii REST and gRPC health checks passed"
+                exit 0
+              fi
+
+              sleep 2
+            done
+
+            echo "Pompeii failed to become healthy"
+            docker logs --tail 200 pompeii-backend || true
+            exit 1
+            '

@@ -1,14 +1,26 @@
-import { Controller } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseIntPipe,
+  Post,
+  Req,
+} from '@nestjs/common';
 import { GrpcMethod } from '@nestjs/microservices';
-import { UsersService } from 'src/authentication/users/users.service';
+import { Public } from 'src/decorators/public.decorator';
+import { TeamsService } from 'src/authentication/teams/teams.service';
 import {
   GetFeaturesByApplicationRequest,
   GetFeaturesByApplicationResponse,
-  User,
   UserContext,
   UserIdentity,
 } from '../types/pompeii';
+import { PermissionLevel } from 'src/utils/enums';
+import { AuthorizationService } from './authorization.service';
 import { FeaturesService } from './features/features.service';
+import { PermissionsService } from './permissions/permissions.service';
 
 /**
  * Controller responsible for handling authorization-related operations.
@@ -22,9 +34,88 @@ export class AuthorizationController {
    * @param featuresService - The service used to manage features.
    */
   constructor(
+    private readonly authorizationService: AuthorizationService,
     private readonly featuresService: FeaturesService,
-    private readonly usersService: UsersService,
+    private readonly teamsService: TeamsService,
+    private readonly permissionsService: PermissionsService,
   ) {}
+
+  @Public()
+  @Get('health')
+  health() {
+    return {
+      ok: true,
+      service: 'pompeii-service',
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  @Get('context/:key')
+  async getContext(@Param('key') key: string, @Req() req: any): Promise<UserContext> {
+    return this.authorizationService.buildUserContext({
+      ...req.user,
+      key,
+    });
+  }
+
+  @Get('teams')
+  async listTeams() {
+    return this.teamsService.listTeams();
+  }
+
+  @Post('teams')
+  async createTeam(@Body() body: { name: string; slug?: string }) {
+    return this.teamsService.createTeam(body);
+  }
+
+  @Get('teams/:id/memberships')
+  async listMemberships(@Param('id', ParseIntPipe) teamId: number) {
+    return this.teamsService.listMembershipsForTeam(teamId);
+  }
+
+  @Post('memberships')
+  async createMembership(
+    @Body() body: { users_id: number; teams_id: number; role: number },
+  ) {
+    return this.teamsService.addMembership(body);
+  }
+
+  @Delete('memberships/:id')
+  async deleteMembership(@Param('id', ParseIntPipe) id: number) {
+    return {
+      removed: await this.teamsService.removeMembership(id),
+    };
+  }
+
+  @Post('permissions')
+  async setPermission(
+    @Body()
+    body: {
+      membership_id: number;
+      feature_id: number;
+      level: PermissionLevel;
+    },
+  ) {
+    const valid = await this.permissionsService.validateMembershipAndFeature({
+      membership_id: body.membership_id,
+      feature_id: body.feature_id,
+    });
+
+    if (!valid) {
+      return {
+        error: 'Invalid membership_id or feature_id',
+      };
+    }
+
+    return this.permissionsService.setPermission(body);
+  }
+
+  @Delete('permissions/:id')
+  async deletePermission(@Param('id', ParseIntPipe) id: number) {
+    return {
+      removed: await this.permissionsService.removePermission(id),
+    };
+  }
 
   /**
    * Handles the gRPC method `GetFeaturesByApplication` for the `PompeiiService`.
@@ -53,46 +144,6 @@ export class AuthorizationController {
    */
   @GrpcMethod('PompeiiService', 'Login')
   async login(data: UserIdentity): Promise<UserContext> {
-    /**
-     * Get the Features for the current app.
-     */
-    const defaultFeatures = await this.featuresService.getFeaturesByApplication(
-      {
-        slug: data.key,
-      },
-    );
-
-    /**
-     * Get the current user, and if required, create or update it.
-     */
-    const me = await this.usersService.updateUser(data);
-
-    /**
-     * TODO: Update this to have different permission sets per team, even if it's the same user.
-     */
-    const userPermissions =
-      me.memberships?.flatMap((item) => item.permissions) || [];
-
-    /**
-     * Override default permissions with membership-level treatments where applicable.
-     */
-    const features = defaultFeatures.map((item) => {
-      const override = userPermissions.find(
-        (permission) => permission?.feature_id === item.id,
-      )?.level;
-
-      if (override) {
-        item.default_value = override;
-      }
-
-      return item;
-    });
-
-    const kickoff: UserContext = {
-      me: me as unknown as User,
-      features,
-    };
-
-    return kickoff;
+    return this.authorizationService.buildUserContext(data);
   }
 }

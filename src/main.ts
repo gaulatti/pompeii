@@ -32,7 +32,26 @@ async function bootstrap(): Promise<void> {
   /**
    * Enable CORS for the application
    */
-  app.enableCors();
+  const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  app.enableCors({
+    origin: (origin, callback) => {
+      if (
+        !origin ||
+        allowedOrigins.length === 0 ||
+        allowedOrigins.includes(origin)
+      ) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error(`Origin not allowed: ${origin}`), false);
+    },
+    credentials: true,
+  });
 
   /**
    * Register the global authenticatiojn guard

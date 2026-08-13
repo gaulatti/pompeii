@@ -1,0 +1,62 @@
+@import "@gaulatti/bleecker/styles.base.css";
+@source "../node_modules/@gaulatti/bleecker/dist/**/*.js";
+@source "./**/*.{ts,tsx}";
+
+@layer base {
+  html {
+    min-width: 320px;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    min-height: 100%;
+    background: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--color-sea) 24%, transparent);
+  }
+}
+
+@layer components {
+  .app-page {
+    margin-inline: auto;
+    width: 100%;
+    max-width: 88rem;
+  }
+
+  .app-page-header {
+    border-bottom: 1px solid var(--border-subtle);
+    padding-bottom: var(--space-container);
+  }
+
+  .app-section-label {
+    color: var(--color-text-secondary);
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+  }
+
+  .app-secondary-copy {
+    font-family: var(--font-secondary);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

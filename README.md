@@ -1,99 +1,129 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Pompeii Service
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Centralized authn + authz + feature flag management plane.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://coveralls.io/github/nestjs/nest?branch=master" target="_blank"><img src="https://coveralls.io/repos/github/nestjs/nest/badge.svg?branch=master#9" alt="Coverage" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Architecture
 
-## Description
-
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
-
-```bash
-$ npm install
-```
-
-## Compile and run the project
-
-```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
-```
-
-## Run tests
-
-```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
-```
+- **Backend** — NestJS administration REST API plus private gRPC authorization API
+- **Frontend** — React Router app (Vite dev server)
+- **Auth** — AWS Cognito (same pool as alcantara)
+- **Deploy** — Backend via Docker → GHCR → on-prem SSH; Frontend via npm build → S3 → CloudFront
 
 ## Deployment
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+The two GitHub Actions workflows mirror the established Auburndale and Mistify
+deployment patterns:
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+- `frontend-deploy.yml` typechecks and builds the static React app, uploads it
+  to S3, and invalidates the CloudFront entry point.
+- `backend-deploy.yml` tests and builds one Docker image, pushes it to GHCR,
+  and deploys it to the on-premises host over SSH. That single container runs
+  both the REST administration API and the authorization gRPC service, exposed
+  through `HTTP_PORT` and `GRPC_PORT`. Database migrations run before the
+  process starts, and deployment succeeds only after both the REST health route
+  and gRPC TCP listener are ready.
+
+Both workflows run on pushes to `main` that touch their respective application
+or workflow and may also be started manually with `workflow_dispatch`.
+
+All commits must follow the Conventional Commits format, such as
+`feat(auth): add service identity validation`. Running `npm install` at the
+repository root installs the versioned Husky `commit-msg` hook. GitHub Actions
+also validates every pushed commit and every pull request, so the policy is not
+limited to an individual developer's local Git configuration.
+
+Repository secrets required by the backend workflow are `DEPLOYMENT_TOKEN`,
+`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `COGNITO_USER_POOL_ID`,
+`COGNITO_CLIENT_ID`, `COGNITO_ALLOWED_CLIENT_IDS`, and `DATABASE_URL`. Backend
+variables are `HTTP_PORT`, `GRPC_PORT`, `AWS_REGION`, `LOGS_GROUP`, and
+`ALLOWED_ORIGINS`; `AUTHZ_DECISION_CACHE_TTL_MS`,
+`AUTHZ_DECISION_CACHE_MAX_ENTRIES`, `SERVICE_FQDN`, `ASSETS_BUCKET_NAME`, and
+`DB_SSL` are optional.
+
+The frontend workflow requires AWS credential secrets and the repository
+variables `AWS_REGION`, `BUCKET_NAME`, `DISTRIBUTION_ID`, `VITE_API_FQDN`,
+`VITE_FQDN`, `VITE_LOGIN_REDIRECT_ORIGINS`, `VITE_LOGIN_REDIRECT_SCHEMES`,
+`VITE_COGNITO_USER_POOL_ID`, `VITE_COGNITO_CLIENT_ID`, and
+`VITE_USER_POOL_DOMAIN`.
+
+## Dev Setup
 
 ```bash
-$ npm install -g mau
-$ mau deploy
+# Start backend
+docker compose up -d
+
+# Start frontend (native, faster HMR)
+cd frontend && npm run dev
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+Backend runs on `http://localhost:3187`, frontend on `http://localhost:5187`.
 
-## Resources
+## Environment
 
-Check out a few resources that may come in handy when working with NestJS:
+Copy `.env.example` or use the existing `.env` files in `backend/` and `frontend/`.
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+| Variable | Description |
+|---|---|
+| `DATABASE_URL` | PostgreSQL connection string |
+| `COGNITO_USER_POOL_ID` | Cognito pool ID |
+| `COGNITO_CLIENT_ID` | Cognito app client ID |
+| `COGNITO_ALLOWED_CLIENT_IDS` | Comma-separated Auburndale, Angelina, Alcantara, and Celesti client IDs whose ID tokens client services may submit to gRPC, in addition to Pompeii's own client ID |
+| `GRPC_PORT` | Private authorization gRPC port (default `50087`) |
+| `AUTHZ_DECISION_CACHE_TTL_MS` | Allow/deny cache TTL in milliseconds (default `5000`) |
+| `AUTHZ_DECISION_CACHE_MAX_ENTRIES` | Maximum in-memory authorization decisions retained per instance (default `10000`) |
+| `VITE_API_PORT` | Backend port for local dev |
+| `VITE_API_FQDN` | Backend FQDN for production |
+| `VITE_FQDN` | Frontend FQDN for Cognito redirects |
+| `VITE_LOGIN_REDIRECT_ORIGINS` | Comma-separated Auburndale, Angelina, Alcantara, and Celesti origins Pompeii may redirect to after login |
+| `VITE_LOGIN_REDIRECT_SCHEMES` | Explicit native callback schemes Pompeii may redirect to (for example `celesti`) |
 
-## Support
+## Schema
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+Run `cd backend && npm run db:migrate` when deploying schema changes.
 
-## Stay in touch
+## Authorization
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+Client services request allow/deny decisions through the private
+`pompeii.authorization.v1.AuthorizationService` gRPC API. The REST API is an
+authenticated administration surface and does not expose an authorization
+decision endpoint. The versioned contract is at
+`backend/src/proto/authorization.proto`.
 
-## License
+RBAC permissions are separate from application feature overrides. Roles may be
+assigned globally or to a team; a team-scoped decision evaluates both its team
+assignments and global assignments. Decisions are denied by default and cached
+briefly.
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+Verified identities presented by client services are registered in Pompeii on
+their first authorization request. Registration grants no permissions: an
+administrator must assign an Auburndale, Angelina, Alcantara, Celesti, or custom
+role in Governance before the client request is allowed.
+
+The client application permission catalog and its default viewer/operator/admin
+roles are installed by `20260812210000-add-client-application-permissions.js`.
+Client services send their namespaced permission key and the end-user Cognito ID
+token to the gRPC `Authorize` method; they fail closed when Pompeii denies or is
+unavailable.
+
+## Centralized login
+
+Pompeii is the only user-facing login surface. Auburndale, Angelina, Alcantara,
+and Celesti redirect unauthenticated browsers to `/login?returnTo=...` on the
+Pompeii frontend. Pompeii validates the destination against
+`VITE_LOGIN_REDIRECT_ORIGINS`, completes Cognito login, and returns the browser
+to the client. The client then performs a transparent app-client OAuth exchange
+against the existing Cognito SSO session; Cognito tokens never appear in the
+redirect URL. Each client origin must remain registered as a callback URL on
+its own Cognito app client.
+
+## Superadmin
+
+The RBAC migration maps the legacy owner of team `1` to a global
+`platform-admin` assignment. Other legacy membership roles become team-scoped
+system-role assignments once, during migration. Membership changes do not
+modify RBAC assignments; new roles and mappings are configurable only through
+the protected governance API.
+
+## Team Filtering
+
+Select a team in the header to scope Users and Applications views to that team.

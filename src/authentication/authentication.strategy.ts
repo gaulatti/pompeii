@@ -57,6 +57,16 @@ export class AuthenticationStrategy extends PassportStrategy(Strategy) {
     configService: ConfigService,
     private readonly usersService: UsersService,
   ) {
+    const region = configService.get<string>('AWS_REGION') as string;
+    const poolId = configService.get<string>('COGNITO_USER_POOL_ID') as string;
+    const audience = configService.get<string>('COGNITO_CLIENT_ID') as string;
+
+    if (!region || !poolId || !audience) {
+      throw new Error(
+        'Missing Cognito configuration: AWS_REGION, COGNITO_USER_POOL_ID, COGNITO_CLIENT_ID are required.',
+      );
+    }
+
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       secretOrKeyProvider: passportJwtSecret({
@@ -64,14 +74,12 @@ export class AuthenticationStrategy extends PassportStrategy(Strategy) {
         rateLimit: true,
         jwksRequestsPerMinute: 5,
         jwksUri: `${buildJwksUri(
-          configService.get<string>('AWS_REGION') as string,
-          configService.get<string>('COGNITO_USER_POOL_ID') as string,
+          region,
+          poolId,
         )}/.well-known/jwks.json`,
       }),
-      issuer: buildJwksUri(
-        configService.get<string>('AWS_REGION') as string,
-        configService.get<string>('COGNITO_USER_POOL_ID') as string,
-      ),
+      issuer: buildJwksUri(region, poolId),
+      audience,
       algorithms: ['RS256'],
     });
   }
@@ -83,6 +91,10 @@ export class AuthenticationStrategy extends PassportStrategy(Strategy) {
    * @returns A promise that resolves with the updated user information.
    */
   async validate(payload: any) {
+    if (payload?.token_use !== 'id') {
+      throw new Error('Invalid token_use. Expected id token.');
+    }
+
     return await this.usersService.updateUser(payload);
   }
 }

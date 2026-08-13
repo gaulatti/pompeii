@@ -7,6 +7,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { exec } from 'child_process';
 import * as fs from 'fs';
+import * as os from 'os';
 import { promisify } from 'util';
 
 const execPromise = promisify(exec);
@@ -22,7 +23,7 @@ const execPromise = promisify(exec);
  */
 export type DatabaseCredentials = {
   host: string;
-  port: string;
+  port: string | number;
   username: string;
   password: string;
   database: string;
@@ -58,7 +59,7 @@ export class BackupService {
   /**
    * Backs up the database by performing the following steps:
    * 1. Retrieves the database credentials.
-   * 2. Generates a SQL dump file using `mysqldump` and saves it to a temporary file.
+  * 2. Generates a SQL dump file using `pg_dump` and saves it to a temporary file.
    * 3. Uploads the SQL dump file to an S3 bucket.
    * 4. Deletes the temporary SQL dump file.
    * 5. Logs the success or failure of the backup process.
@@ -67,16 +68,14 @@ export class BackupService {
    */
   @Cron('0 */12 * * *')
   async backupDatabase(): Promise<void> {
-    /**
-     * The name of the database to backup.
-     */
-    const database = process.env.DB_DATABASE;
-
     try {
-      const { host, port, username, password } =
+      const { host, port, username, password, database } =
         await this.getDatabaseCredentials();
 
-      if (host === 'localhost' || database !== 'pompeii') {
+      if (
+        ['localhost', '127.0.0.1', os.hostname()].includes(host) ||
+        database !== 'pompeii'
+      ) {
         this.logger.error(
           `Database backup is not supported when using a local database. (${JSON.stringify({ host, database })})`,
         );
@@ -86,7 +85,7 @@ export class BackupService {
       const sqlFilePath = `/tmp/backup-${database.toLowerCase()}-${new Date().toISOString()}.sql`;
 
       await execPromise(
-        `mysqldump -h ${host} -P ${port} -u ${username} -p${password} ${database} > ${sqlFilePath}`,
+        `PGPASSWORD='${password}' pg_dump -h ${host} -p ${port} -U ${username} -d ${database} -F p > ${sqlFilePath}`,
       );
 
       await this.uploadToS3(sqlFilePath);
@@ -107,6 +106,28 @@ export class BackupService {
    * @throws {Error} If there is an issue retrieving or parsing the secret value.
    */
   private async getDatabaseCredentials(): Promise<DatabaseCredentials> {
+    if (process.env.DATABASE_URL) {
+      const url = new URL(process.env.DATABASE_URL);
+
+      return {
+        host: url.hostname,
+        port: Number(url.port) || 5432,
+        username: decodeURIComponent(url.username),
+        password: decodeURIComponent(url.password),
+        database: url.pathname.replace(/^\//, ''),
+      };
+    }
+
+    if (process.env.USE_LOCAL_DATABASE === 'true') {
+      return {
+        host: process.env.DB_HOST || 'localhost',
+        port: Number(process.env.DB_PORT) || 5432,
+        username: process.env.DB_USERNAME || 'postgres',
+        password: process.env.DB_PASSWORD || '',
+        database: process.env.DB_DATABASE || 'pompeii',
+      };
+    }
+
     const command = new GetSecretValueCommand({
       SecretId: process.env.DB_CREDENTIALS,
     });

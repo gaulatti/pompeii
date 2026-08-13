@@ -28,13 +28,30 @@ const secretsManager = new SecretsManagerClient();
     SequelizeModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => {
+        const shouldUseSsl = configService.get('DB_SSL') === 'true';
         const defaultConfig: SequelizeModuleOptions = {
-          dialect: 'mysql',
-          port: +3306,
-          models: [join(__dirname, '**/*.model.ts')],
+          dialect: 'postgres',
+          port: +5432,
+          models: [join(__dirname, '**/*.model.js')],
           autoLoadModels: true,
-          logging: false,
+          logging: configService.get('DB_LOGGING') === 'true',
+          dialectOptions: shouldUseSsl
+            ? {
+                ssl: {
+                  require: true,
+                  rejectUnauthorized: false,
+                },
+              }
+            : undefined,
         };
+
+        const databaseUrl = configService.get<string>('DATABASE_URL');
+        if (databaseUrl) {
+          return {
+            ...defaultConfig,
+            url: databaseUrl,
+          };
+        }
 
         if (configService.get('USE_LOCAL_DATABASE') === 'true') {
           return {
@@ -44,7 +61,6 @@ const secretsManager = new SecretsManagerClient();
             username: configService.get('DB_USERNAME'),
             password: configService.get('DB_PASSWORD'),
             database: configService.get('DB_DATABASE'),
-            logging: true,
           };
         }
 
