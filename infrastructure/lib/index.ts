@@ -1,48 +1,83 @@
 import * as cdk from 'aws-cdk-lib';
-import { Repository } from 'aws-cdk-lib/aws-ecr';
-import { ArnPrincipal, Role } from 'aws-cdk-lib/aws-iam';
+import {
+  Certificate,
+  CertificateValidation,
+} from 'aws-cdk-lib/aws-certificatemanager';
 import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
+import { Secret } from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 import {
-  createCNAME,
   createDistribution,
   createHostedZone,
-  createZoneCertificate,
+  createRoute53Alias,
 } from './network';
 import { createPermissions } from './permissions';
-import { createBuckets } from './storage';
+import { createFrontendBucket } from './storage';
+
+function requiredEnvironment(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) throw new Error(`${name} is required`);
+  return value;
+}
 
 export class PompeiiStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    const { hostedZone } = createHostedZone(this);
-    const { certificate } = createZoneCertificate(this);
-    const { frontendBucket } = createBuckets(this);
-    const { githubActionsUser } = createPermissions(this);
+    const zoneName = requiredEnvironment('HOSTED_ZONE_NAME');
+    const secretArn = requiredEnvironment('SECRET_ARN');
+    const frontendDomain = `pompeii.${zoneName}`;
+
+    const hostedZone = createHostedZone(
+      this,
+      requiredEnvironment('HOSTED_ZONE_ID'),
+      zoneName,
+    );
+    const certificate = new Certificate(this, 'FrontendCertificate', {
+      domainName: frontendDomain,
+      validation: CertificateValidation.fromDns(hostedZone),
+    });
+    const frontendBucket = createFrontendBucket(this);
+    const distribution = createDistribution(
+      this,
+      frontendBucket,
+      certificate,
+      frontendDomain,
+    );
+    createRoute53Alias(this, hostedZone, distribution);
+
+    const logGroup = new LogGroup(this, 'ServiceLogGroup', {
+      logGroupName: '/services/pompeii',
+      retention: RetentionDays.ONE_MONTH,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+    const applicationSecret = Secret.fromSecretCompleteArn(
+      this,
+      'ApplicationSecret',
+      secretArn,
+    );
+    const { githubActionsUser, onPremisesUser } = createPermissions(this);
 
     frontendBucket.grantReadWrite(githubActionsUser);
-
-    const repository = new Repository(this, `${this.stackName}EcrRepository`, {
-      repositoryName: `${this.stackName.toLocaleLowerCase()}`,
-    });
-
-    repository.grantPullPush(githubActionsUser);
-
-    new LogGroup(this, `${this.stackName}ServiceLogGroup`, {
-      logGroupName: '/services/pompeii-service',
-      retention: RetentionDays.ONE_WEEK,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-    });
-
-    const { distribution } = createDistribution(this, frontendBucket, certificate);
     distribution.grantCreateInvalidation(githubActionsUser);
+    logGroup.grantWrite(onPremisesUser);
+    applicationSecret.grantRead(onPremisesUser);
 
-    createCNAME(this, hostedZone, distribution);
-
-    new Role(this, `${this.stackName}ServiceRole`, {
-      assumedBy: new ArnPrincipal(process.env.SERVICE_ROLE_ARN!),
-      roleName: `${this.stackName}ServiceRole`,
+    new cdk.CfnOutput(this, 'FrontendBucketName', {
+      value: frontendBucket.bucketName,
+      description: 'Set GitHub variable BUCKET_NAME to this value.',
+    });
+    new cdk.CfnOutput(this, 'FrontendDistributionId', {
+      value: distribution.distributionId,
+      description: 'Set GitHub variable DISTRIBUTION_ID to this value.',
+    });
+    new cdk.CfnOutput(this, 'FrontendFqdn', {
+      value: `https://${frontendDomain}`,
+      description: 'Set GitHub variable VITE_FQDN to this value.',
+    });
+    new cdk.CfnOutput(this, 'ServiceLogGroupName', {
+      value: logGroup.logGroupName,
+      description: 'Set GitHub variable LOGS_GROUP to this value.',
     });
   }
 }

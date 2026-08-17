@@ -70,6 +70,21 @@ export class AuthorizationController {
     };
   }
 
+  @Public()
+  @Post('login/resolve')
+  async resolveLoginRedirect(@Body() body: { returnTo?: string }) {
+    if (typeof body.returnTo !== 'string' || !body.returnTo.trim()) {
+      throw new BadRequestException('returnTo is required');
+    }
+    const redirectTo = await this.applicationsService.resolveLoginRedirect(
+      body.returnTo.trim(),
+    );
+    if (!redirectTo) {
+      throw new ForbiddenException('Login redirect is not registered');
+    }
+    return { redirect_to: redirectTo };
+  }
+
   @Get('teams')
   async listTeams(@Req() req: any) {
     const userId = Number(req.user?.id);
@@ -213,8 +228,19 @@ export class AuthorizationController {
       slug?: string;
       team_id: number;
       description?: string;
+      cognito_user_pool_id: string;
+      cognito_client_id: string;
+      login_redirect_origins?: string[];
+      login_redirect_schemes?: string[];
     },
   ) {
+    body.cognito_user_pool_id = body.cognito_user_pool_id?.trim();
+    body.cognito_client_id = body.cognito_client_id?.trim();
+    if (!body.cognito_user_pool_id || !body.cognito_client_id) {
+      throw new BadRequestException(
+        'cognito_user_pool_id and cognito_client_id are required',
+      );
+    }
     const application = await this.applicationsService.createApplication(body);
     await this.auditService.record({
       actorUserId: req.user.id,
@@ -224,6 +250,50 @@ export class AuthorizationController {
       metadata: body,
     });
     return application;
+  }
+
+  @Patch('applications/:id')
+  async updateApplication(
+    @Req() req: any,
+    @Param('id', ParseIntPipe) id: number,
+    @Body()
+    body: {
+      name?: string;
+      description?: string;
+      cognito_user_pool_id?: string;
+      cognito_client_id?: string;
+      login_redirect_origins?: string[];
+      login_redirect_schemes?: string[];
+    },
+  ) {
+    const application = await this.applicationsService.getById(id);
+    if (!application) throw new NotFoundException('Application not found');
+    await this.rbacService.assertUserPermission(
+      req.user.id,
+      'application:write',
+      application.team_id,
+    );
+    if (body.cognito_client_id !== undefined) {
+      body.cognito_client_id = body.cognito_client_id.trim();
+      if (!body.cognito_client_id) {
+        throw new BadRequestException('cognito_client_id cannot be blank');
+      }
+    }
+    if (body.cognito_user_pool_id !== undefined) {
+      body.cognito_user_pool_id = body.cognito_user_pool_id.trim();
+      if (!body.cognito_user_pool_id) {
+        throw new BadRequestException('cognito_user_pool_id cannot be blank');
+      }
+    }
+    const updated = await this.applicationsService.updateApplication(id, body);
+    await this.auditService.record({
+      actorUserId: req.user.id,
+      action: 'application.update',
+      targetType: 'application',
+      targetId: String(id),
+      metadata: body,
+    });
+    return updated;
   }
 
   @Get('applications/:id/features')

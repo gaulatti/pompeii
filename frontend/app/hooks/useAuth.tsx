@@ -1,4 +1,4 @@
-import { signOut } from 'aws-amplify/auth';
+import { clearAppSession } from '../auth/session';
 import { useDispatch, useSelector } from 'react-redux';
 import { logout as logoutDispatcher } from '../state/dispatchers/auth';
 import {  isAuthenticated as isAuthenticatedSelector, isLoaded as isLoadedSelector } from '../state/selectors/auth';
@@ -22,7 +22,7 @@ const useLogout = () => {
    */
   const logout = async (): Promise<void> => {
     if (isAuthenticated && isLoaded) {
-      await signOut();
+      await clearAppSession();
       dispatch(logoutDispatcher());
     }
   };

@@ -4,27 +4,36 @@ NestJS-based authentication and authorization service.
 
 ## Protocols
 
-- REST API (Fastify): port `HTTP_PORT` (default `3000`)
+- REST API (Fastify): fixed container port `3187`
 - private gRPC (`pompeii.authorization.v1.AuthorizationService`): port
-  `GRPC_PORT` (deployment default `50087`)
+  `50087`
 
 ## Database
 
 The service is now PostgreSQL-oriented.
 
-Supported DB config modes:
-
-1. `DATABASE_URL` (preferred)
-2. Local vars (`USE_LOCAL_DATABASE=true` + `DB_HOST/DB_PORT/DB_USERNAME/DB_PASSWORD/DB_DATABASE`)
-3. AWS Secrets Manager (`DB_CREDENTIALS`)
+Production loads `DATABASE_URL` and `ALLOWED_ORIGINS` from the object selected
+by `UNIQUE_KEY` in `SECRET_ARN`. Secrets load
+before both migrations and Nest startup. Docker Compose owns local backend
+configuration: it provides PostgreSQL 17 and a single `DATABASE_URL`, waits for
+the database health check, and applies migrations before starting Nest. No
+backend env file is required for local development.
 
 ## Auth
 
 - Cognito JWT validation via JWKS
-- Required env: `AWS_REGION`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`
-- `COGNITO_ALLOWED_CLIENT_IDS` accepts the comma-separated Auburndale,
-  Angelina, Alcantara, and Celesti Cognito app client IDs submitted to gRPC.
+- Cognito user-pool and app-client IDs are managed on database `applications`
+  records. The app-client ID is unique. REST and gRPC tokens are rejected unless
+  their issuer and `aud` claim match the registered pair.
+- Web login origins and native callback schemes are stored on the same
+  application record. `POST /authorization/login/resolve` is public, but it
+  returns a handoff URL only when the requested destination matches one of
+  those database-backed lists.
 - ID tokens (`token_use=id`) are enforced
+
+There is no backend Cognito environment variable or Secrets Manager field.
+Before deploying this migration, populate both Cognito columns for the Pompeii
+application record so the admin API can authenticate its own frontend.
 
 ## Setup
 

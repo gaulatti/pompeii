@@ -1,21 +1,58 @@
+# Local development only. Production is deployed through GitHub Actions.
+name: pompeii-local
+
 services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: pompeii
+      POSTGRES_USER: pompeii
+      POSTGRES_PASSWORD: pompeii-local-development
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile.dev
     container_name: pompeii-backend
-    env_file:
-      - ./backend/.env
+    command:
+      - /bin/sh
+      - -c
+      - npm run db:migrate && npm run start:dev
     environment:
-      - CHOKIDAR_USEPOLLING=true
+      DATABASE_URL: postgres://pompeii:pompeii-local-development@postgres:5432/pompeii
+      AUTH_MODE: test
+      TEST_AUTH_SECRET: pompeii-local-browser-test-secret-change-me
+      ALLOWED_ORIGINS: http://localhost:5187,http://localhost:5173
     ports:
-      - "3187:3187"
-      - "50087:50087"
+      - '3187:3187'
+      - '50087:50087'
     volumes:
       - ./backend/src:/app/src
       - ./backend/tsconfig.json:/app/tsconfig.json
       - ./backend/nest-cli.json:/app/nest-cli.json
-      - ~/.aws:/root/.aws:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://localhost:3187/authorization/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    init: true
     develop:
       watch:
         - action: sync
@@ -33,11 +70,11 @@ services:
       dockerfile: Dockerfile.dev
     container_name: pompeii-frontend
     env_file:
-      - ./frontend/.env
-    environment:
-      - VITE_USE_POLLING=true
+      - path: ./frontend/.env.example
+      - path: ./frontend/.env
+        required: false
     ports:
-      - "5187:5187"
+      - '5187:5187'
     volumes:
       - ./frontend/app:/app/app
       - ./frontend/vite.config.ts:/app/vite.config.ts
@@ -53,5 +90,9 @@ services:
         - action: rebuild
           path: ./frontend/package.json
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  postgres-data:

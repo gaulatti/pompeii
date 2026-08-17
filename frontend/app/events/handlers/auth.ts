@@ -1,4 +1,4 @@
-import { fetchAuthSession } from 'aws-amplify/auth';
+import { getAppSession } from '../../auth/session';
 import { put, select } from 'redux-saga/effects';
 import { login as loginDispatcher, setAuthLoaded } from '../../state/dispatchers/auth';
 import { setKickoff } from '../../state/dispatchers/lifecycle';
@@ -11,17 +11,16 @@ import { getKickoffReady } from '../../state/selectors/lifecycle';
  */
 function* checkSession(): unknown {
   try {
-    const session = yield fetchAuthSession();
+    const session = yield getAppSession();
     const isKickoffReady = yield select(getKickoffReady);
 
-    const { userSub, tokens } = session;
+    const { userSub, token, payload = {} } = session;
 
-    if (userSub && !isKickoffReady && tokens?.idToken) {
+    if (userSub && !isKickoffReady && token) {
       const sseWorker = new SharedWorker(new URL('../../engines/sse.shared.ts', import.meta.url), { type: 'module' });
       sseWorker.port.start();
-      sseWorker.port.postMessage({ token: tokens.idToken.toString() });
+      sseWorker.port.postMessage({ token });
 
-      const payload = tokens.idToken.payload as Record<string, string | undefined>;
       const name = payload.name || payload.given_name || '';
       const given_name = payload.given_name || payload.name || '';
       const family_name = payload.family_name || '';

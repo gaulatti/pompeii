@@ -12,7 +12,7 @@ function initEventSource(): void {
   if (eventSource) return;
 
   const sseUrl = globalScope.location.origin.includes('localhost')
-    ? `http://localhost:${import.meta.env.VITE_API_PORT}/notifications`
+    ? 'http://localhost:3187/notifications'
     : `${import.meta.env.VITE_API_FQDN}/notifications`;
 
   eventSource = new EventSource(sseUrl);

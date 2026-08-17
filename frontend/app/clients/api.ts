@@ -1,4 +1,4 @@
-import { fetchAuthSession } from 'aws-amplify/auth';
+import { getAppSession } from '../auth/session';
 import axios from 'axios';
 import { useEffect, useState } from 'react';
 
@@ -20,6 +20,21 @@ export enum Method {
   DELETE = 'DELETE',
 }
 
+function apiURL(url: string): string {
+  return window.location.origin.includes('localhost')
+    ? `http://localhost:3187/${url}`
+    : `${import.meta.env.VITE_API_FQDN}/${url}`;
+}
+
+export async function sendPublicRequest(
+  method: Method.POST,
+  url: string,
+  data: unknown,
+): Promise<any> {
+  const response = await axios.request({ method, url: apiURL(url), data });
+  return response.data;
+}
+
 /**
  * Sends an HTTP request using the specified method, URL, and data.
  *
@@ -29,15 +44,17 @@ export enum Method {
  * @returns {Promise<any>} - A promise that resolves to the response data.
  * @throws {Error} - Throws an error if an unsupported HTTP method is provided.
  */
-const sendRequest = async (method: Method, url: string = '', data?: any): Promise<any> => {
-  const { tokens } = await fetchAuthSession();
-  const fullURL = window.location.origin.includes('localhost')
-    ? `http://localhost:${import.meta.env.VITE_API_PORT}/${url}`
-    : `${import.meta.env.VITE_API_FQDN}/${url}`;
+const sendRequest = async (
+  method: Method,
+  url: string = '',
+  data?: any,
+): Promise<any> => {
+  const { token } = await getAppSession();
+  const fullURL = apiURL(url);
 
   const config = {
     headers: {
-      Authorization: tokens?.idToken && `Bearer ${tokens!.idToken}`,
+      Authorization: token && `Bearer ${token}`,
     },
   };
 
@@ -76,7 +93,12 @@ const sendRequest = async (method: Method, url: string = '', data?: any): Promis
  * @example
  * const { data, loading, error } = useAPI('GET', [dependency], 'https://api.example.com/data');
  */
-const useAPI = (method: Method, dependencies: any[], url?: string, postData?: any): { data: any; loading: boolean; error: Error | any } => {
+const useAPI = (
+  method: Method,
+  dependencies: any[],
+  url?: string,
+  postData?: any,
+): { data: any; loading: boolean; error: Error | any } => {
   const [data, setData] = useState<any>();
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<Error | any>(null);
@@ -86,7 +108,11 @@ const useAPI = (method: Method, dependencies: any[], url?: string, postData?: an
       try {
         setLoading(true);
         const result = await sendRequest(method, url, postData);
-        setData((prevData: any) => (JSON.stringify(prevData) !== JSON.stringify(result) ? result : prevData));
+        setData((prevData: any) =>
+          JSON.stringify(prevData) !== JSON.stringify(result)
+            ? result
+            : prevData,
+        );
       } catch (err) {
         setError(err);
       } finally {

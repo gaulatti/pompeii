@@ -8,9 +8,12 @@ import {
 import { join } from 'path';
 import { AppModule } from './app.module';
 import { AuthenticationGuard } from './authentication/authentication.guard';
+import { TokenVerifierService } from './authentication/token-verifier.service';
+import { UsersService } from './authentication/users/users.service';
 import { PermissionGuard } from './authorization/rbac/permission.guard';
 import { RbacService } from './authorization/rbac/rbac.service';
 import { grpcPort, httpPort } from './utils/network';
+import { loadApplicationSecrets } from './config/secrets-loader';
 
 /**
  * Initializes and starts the NestJS application with Fastify adapter.
@@ -23,6 +26,10 @@ import { grpcPort, httpPort } from './utils/network';
  * @returns {Promise<void>} A promise that resolves when the application has started.
  */
 async function bootstrap(): Promise<void> {
+  await loadApplicationSecrets();
+  if (process.env.AUTH_MODE === 'test' && process.env.NODE_ENV === 'production') {
+    throw new Error('AUTH_MODE=test must never run with NODE_ENV=production');
+  }
   /**
    * Create a new Nest application using the Fastify adapter
    */
@@ -34,7 +41,10 @@ async function bootstrap(): Promise<void> {
   /**
    * Enable CORS for the application
    */
-  const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+  const allowedOrigins = (
+    process.env.ALLOWED_ORIGINS ||
+    (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:5187')
+  )
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean);
@@ -60,7 +70,13 @@ async function bootstrap(): Promise<void> {
   /**
    * Register the global authenticatiojn guard
    */
-  app.useGlobalGuards(new AuthenticationGuard(app.get(Reflector)));
+  app.useGlobalGuards(
+    new AuthenticationGuard(
+      app.get(Reflector),
+      app.get(TokenVerifierService),
+      app.get(UsersService),
+    ),
+  );
   app.useGlobalGuards(
     new PermissionGuard(app.get(Reflector), app.get(RbacService)),
   );
@@ -87,4 +103,8 @@ async function bootstrap(): Promise<void> {
   Logger.log(`🚀 REST API running on port ${httpPort}`);
 }
 
-bootstrap();
+bootstrap().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  Logger.error(`Pompeii bootstrap failed: ${message}`);
+  process.exit(1);
+});

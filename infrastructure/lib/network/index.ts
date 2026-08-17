@@ -1,89 +1,90 @@
 import { Duration, Stack } from 'aws-cdk-lib';
-import { Certificate, ICertificate } from 'aws-cdk-lib/aws-certificatemanager';
+import { ICertificate } from 'aws-cdk-lib/aws-certificatemanager';
 import {
   CachePolicy,
   Distribution,
-  ErrorResponse,
   OriginAccessIdentity,
   SecurityPolicyProtocol,
   ViewerProtocolPolicy,
 } from 'aws-cdk-lib/aws-cloudfront';
 import { S3BucketOrigin } from 'aws-cdk-lib/aws-cloudfront-origins';
-import { CnameRecord, HostedZone, IHostedZone } from 'aws-cdk-lib/aws-route53';
-import { Bucket } from 'aws-cdk-lib/aws-s3';
+import {
+  AaaaRecord,
+  ARecord,
+  HostedZone,
+  IHostedZone,
+  RecordTarget,
+} from 'aws-cdk-lib/aws-route53';
+import { CloudFrontTarget } from 'aws-cdk-lib/aws-route53-targets';
+import { IBucket } from 'aws-cdk-lib/aws-s3';
 
-const createHostedZone = (stack: Stack) => {
-  const hostedZone = HostedZone.fromHostedZoneAttributes(
-    stack,
-    `${stack.stackName}HostedZone`,
-    {
-      hostedZoneId: process.env.HOSTED_ZONE_ID!,
-      zoneName: process.env.HOSTED_ZONE_NAME!,
-    },
-  );
-
-  return { hostedZone };
-};
-
-const createZoneCertificate = (stack: Stack) => {
-  const certificate = Certificate.fromCertificateArn(
-    stack,
-    `${stack.stackName}Certificate`,
-    process.env.HOSTED_ZONE_CERTIFICATE!,
-  );
-
-  return { certificate };
-};
-
-const createDistribution = (
+export function createHostedZone(
   stack: Stack,
-  s3BucketSource: Bucket,
+  hostedZoneId: string,
+  zoneName: string,
+): IHostedZone {
+  return HostedZone.fromHostedZoneAttributes(stack, 'HostedZone', {
+    hostedZoneId,
+    zoneName,
+  });
+}
+
+export function createDistribution(
+  stack: Stack,
+  frontendBucket: IBucket,
   certificate: ICertificate,
-) => {
+  frontendDomain: string,
+): Distribution {
   const originAccessIdentity = new OriginAccessIdentity(
     stack,
-    `${stack.stackName}DistributionOAI`,
+    'DistributionOriginAccessIdentity',
   );
+  frontendBucket.grantRead(originAccessIdentity);
 
-  s3BucketSource.grantRead(originAccessIdentity);
-
-  const distribution = new Distribution(stack, `${stack.stackName}Distribution`, {
+  return new Distribution(stack, 'FrontendDistribution', {
     defaultBehavior: {
-      origin: S3BucketOrigin.withOriginAccessIdentity(s3BucketSource, {
+      origin: S3BucketOrigin.withOriginAccessIdentity(frontendBucket, {
         originAccessIdentity,
       }),
       viewerProtocolPolicy: ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
       cachePolicy: CachePolicy.CACHING_OPTIMIZED,
+      compress: true,
     },
     defaultRootObject: 'index.html',
-    domainNames: [`pompeii.${process.env.HOSTED_ZONE_NAME}`],
+    domainNames: [frontendDomain],
     certificate,
     minimumProtocolVersion: SecurityPolicyProtocol.TLS_V1_2_2021,
     errorResponses: [
+      {
+        httpStatus: 403,
+        responseHttpStatus: 200,
+        responsePagePath: '/index.html',
+        ttl: Duration.seconds(0),
+      },
       {
         httpStatus: 404,
         responseHttpStatus: 200,
         responsePagePath: '/index.html',
         ttl: Duration.seconds(0),
-      } as ErrorResponse,
+      },
     ],
   });
+}
 
-  return { distribution };
-};
-
-const createCNAME = (
+export function createRoute53Alias(
   stack: Stack,
-  zone: IHostedZone,
+  hostedZone: IHostedZone,
   distribution: Distribution,
-) => {
-  const record = new CnameRecord(stack, `${stack.stackName}FrontendCNAME`, {
+): void {
+  const target = RecordTarget.fromAlias(new CloudFrontTarget(distribution));
+  new ARecord(stack, 'FrontendAliasIpv4', {
+    zone: hostedZone,
     recordName: 'pompeii',
-    zone,
-    domainName: distribution.distributionDomainName,
+    target,
   });
-
-  return { record };
-};
-
-export { createCNAME, createDistribution, createHostedZone, createZoneCertificate };
+  new AaaaRecord(stack, 'FrontendAliasIpv6', {
+    zone: hostedZone,
+    recordName: 'pompeii',
+    target,
+  });
+}
