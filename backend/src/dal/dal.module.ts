@@ -13,7 +13,6 @@ import { RbacPermission } from 'src/models/rbac-permission.model';
 import { RbacRole } from 'src/models/rbac-role.model';
 import { RoleAssignment } from 'src/models/role-assignment.model';
 import { RolePermission } from 'src/models/role-permission.model';
-import { BackupService } from './backup/backup.service';
 
 @Module({
   imports: [
@@ -34,6 +33,5 @@ import { BackupService } from './backup/backup.service';
     ]),
   ],
   exports: [SequelizeModule],
-  providers: [BackupService],
 })
 export class DalModule {}

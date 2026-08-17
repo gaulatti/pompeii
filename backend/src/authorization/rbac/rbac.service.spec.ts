@@ -5,8 +5,6 @@ describe('RbacService', () => {
     overrides: {
       user?: any;
       assignments?: any[];
-      cacheTtlMs?: number;
-      cacheMaxEntries?: number;
     } = {},
   ) => {
     const users = {
@@ -23,13 +21,6 @@ describe('RbacService', () => {
       {} as any,
       {} as any,
       assignments as any,
-      {
-        get: jest.fn((key: string) =>
-          key === 'AUTHZ_DECISION_CACHE_MAX_ENTRIES'
-            ? (overrides.cacheMaxEntries ?? 10000)
-            : (overrides.cacheTtlMs ?? 5000),
-        ),
-      } as any,
     );
     return { service, users, assignments };
   };
@@ -92,7 +83,8 @@ describe('RbacService', () => {
   });
 
   it('evicts old decisions when the bounded cache reaches capacity', async () => {
-    const { service, assignments } = makeService({ cacheMaxEntries: 2 });
+    const { service, assignments } = makeService();
+    Object.defineProperty(service, 'cacheMaxEntries', { value: 2 });
 
     await service.authorizeUser(7, 'permission:one');
     await service.authorizeUser(7, 'permission:two');
@@ -105,7 +97,8 @@ describe('RbacService', () => {
 
   it('removes expired decisions before storing new keys', async () => {
     const now = jest.spyOn(Date, 'now').mockReturnValue(1000);
-    const { service } = makeService({ cacheTtlMs: 5 });
+    const { service } = makeService();
+    Object.defineProperty(service, 'cacheTtlMs', { value: 5 });
 
     await service.authorizeUser(7, 'permission:expired');
     now.mockReturnValue(1006);

@@ -44,8 +44,6 @@ jobs:
         env:
           VITE_API_FQDN: ${{ vars.VITE_API_FQDN }}
           VITE_FQDN: ${{ vars.VITE_FQDN }}
-          VITE_LOGIN_REDIRECT_ORIGINS: ${{ vars.VITE_LOGIN_REDIRECT_ORIGINS }}
-          VITE_LOGIN_REDIRECT_SCHEMES: ${{ vars.VITE_LOGIN_REDIRECT_SCHEMES }}
           VITE_COGNITO_USER_POOL_ID: ${{ vars.VITE_COGNITO_USER_POOL_ID }}
           VITE_COGNITO_CLIENT_ID: ${{ vars.VITE_COGNITO_CLIENT_ID }}
           VITE_USER_POOL_DOMAIN: ${{ vars.VITE_USER_POOL_DOMAIN }}
@@ -54,8 +52,6 @@ jobs:
           required_vars="
             VITE_API_FQDN
             VITE_FQDN
-            VITE_LOGIN_REDIRECT_ORIGINS
-            VITE_LOGIN_REDIRECT_SCHEMES
             VITE_COGNITO_USER_POOL_ID
             VITE_COGNITO_CLIENT_ID
             VITE_USER_POOL_DOMAIN
@@ -76,8 +72,6 @@ jobs:
         env:
           VITE_API_FQDN: ${{ vars.VITE_API_FQDN }}
           VITE_FQDN: ${{ vars.VITE_FQDN }}
-          VITE_LOGIN_REDIRECT_ORIGINS: ${{ vars.VITE_LOGIN_REDIRECT_ORIGINS }}
-          VITE_LOGIN_REDIRECT_SCHEMES: ${{ vars.VITE_LOGIN_REDIRECT_SCHEMES }}
           VITE_COGNITO_USER_POOL_ID: ${{ vars.VITE_COGNITO_USER_POOL_ID }}
           VITE_COGNITO_CLIENT_ID: ${{ vars.VITE_COGNITO_CLIENT_ID }}
           VITE_USER_POOL_DOMAIN: ${{ vars.VITE_USER_POOL_DOMAIN }}

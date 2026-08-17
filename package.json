@@ -1,5 +1,5 @@
 {
-  "name": "pompeii-service",
+  "name": "pompeii",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -9,7 +9,10 @@
     "backend:build": "cd backend && npm run build",
     "backend:migrate": "cd backend && npm run db:migrate",
     "frontend:dev": "cd frontend && npm run dev",
-    "frontend:build": "cd frontend && npm run build"
+    "frontend:build": "cd frontend && npm run build",
+    "infrastructure:build": "cd infrastructure && npm run build",
+    "infrastructure:test": "cd infrastructure && npm test -- --runInBand",
+    "infrastructure:synth": "cd infrastructure && npm run cdk:synth"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.2.1",

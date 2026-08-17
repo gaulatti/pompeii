@@ -90,11 +90,8 @@ jobs:
             require_value "${{ vars.GRPC_PORT }}" "GRPC_PORT"
             require_value "${{ vars.AWS_REGION }}" "AWS_REGION"
             require_value "${{ vars.LOGS_GROUP }}" "LOGS_GROUP"
-            require_value "${{ vars.ALLOWED_ORIGINS }}" "ALLOWED_ORIGINS"
-            require_value "${{ secrets.COGNITO_USER_POOL_ID }}" "COGNITO_USER_POOL_ID"
-            require_value "${{ secrets.COGNITO_CLIENT_ID }}" "COGNITO_CLIENT_ID"
-            require_value "${{ secrets.COGNITO_ALLOWED_CLIENT_IDS }}" "COGNITO_ALLOWED_CLIENT_IDS"
-            require_value "${{ secrets.DATABASE_URL }}" "DATABASE_URL"
+            require_value "${{ secrets.SECRET_ARN }}" "SECRET_ARN"
+            require_value "${{ secrets.UNIQUE_KEY }}" "UNIQUE_KEY"
 
             docker login ghcr.io -u ${{ github.actor }} -p ${{ secrets.DEPLOYMENT_TOKEN }}
             docker pull ghcr.io/${{ github.repository }}-backend:latest
@@ -106,22 +103,12 @@ jobs:
 
             docker run -d --name pompeii-backend \
               -v "$AWS_CREDS:/root/.aws:ro" \
-              -p ${{ vars.HTTP_PORT }}:${{ vars.HTTP_PORT }} \
-              -p ${{ vars.GRPC_PORT }}:${{ vars.GRPC_PORT }} \
+              -p ${{ vars.HTTP_PORT }}:3187 \
+              -p ${{ vars.GRPC_PORT }}:50087 \
               -e NODE_ENV=production \
-              -e HTTP_PORT="${{ vars.HTTP_PORT }}" \
-              -e GRPC_PORT="${{ vars.GRPC_PORT }}" \
-              -e AUTHZ_DECISION_CACHE_TTL_MS="${{ vars.AUTHZ_DECISION_CACHE_TTL_MS || '5000' }}" \
-              -e AUTHZ_DECISION_CACHE_MAX_ENTRIES="${{ vars.AUTHZ_DECISION_CACHE_MAX_ENTRIES || '10000' }}" \
               -e AWS_REGION="${{ vars.AWS_REGION }}" \
-              -e ALLOWED_ORIGINS="${{ vars.ALLOWED_ORIGINS }}" \
-              -e SERVICE_FQDN="${{ vars.SERVICE_FQDN }}" \
-              -e ASSETS_BUCKET_NAME="${{ vars.ASSETS_BUCKET_NAME }}" \
-              -e DB_SSL="${{ vars.DB_SSL || 'true' }}" \
-              -e COGNITO_USER_POOL_ID="${{ secrets.COGNITO_USER_POOL_ID }}" \
-              -e COGNITO_CLIENT_ID="${{ secrets.COGNITO_CLIENT_ID }}" \
-              -e COGNITO_ALLOWED_CLIENT_IDS="${{ secrets.COGNITO_ALLOWED_CLIENT_IDS }}" \
-              -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+              -e SECRET_ARN="${{ secrets.SECRET_ARN }}" \
+              -e UNIQUE_KEY="${{ secrets.UNIQUE_KEY }}" \
               --restart=always \
               --log-driver=awslogs \
               --log-opt awslogs-region=${{ vars.AWS_REGION }} \
@@ -133,11 +120,11 @@ jobs:
               http_ready=false
               grpc_ready=false
 
-              if docker exec pompeii-backend node -e "fetch(\"http://127.0.0.1:${{ vars.HTTP_PORT }}/authorization/health\").then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"; then
+              if docker exec pompeii-backend node -e "fetch(\"http://127.0.0.1:3187/authorization/health\").then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"; then
                 http_ready=true
               fi
 
-              if docker exec pompeii-backend node -e "const socket=require(\"node:net\").connect(${{ vars.GRPC_PORT }},\"127.0.0.1\",()=>{socket.end();process.exit(0)});socket.setTimeout(1000,()=>{socket.destroy();process.exit(1)});socket.on(\"error\",()=>process.exit(1))"; then
+              if docker exec pompeii-backend node -e "const socket=require(\"node:net\").connect(50087,\"127.0.0.1\",()=>{socket.end();process.exit(0)});socket.setTimeout(1000,()=>{socket.destroy();process.exit(1)});socket.on(\"error\",()=>process.exit(1))"; then
                 grpc_ready=true
               fi
 

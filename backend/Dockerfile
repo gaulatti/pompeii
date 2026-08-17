@@ -18,4 +18,4 @@ COPY --from=build /app/config ./config
 COPY --from=build /app/migrations ./migrations
 COPY package.json ./
 EXPOSE 3187 50087
-CMD ["sh", "-c", "npm run db:migrate:runtime && node dist/main"]
+CMD ["node", "dist/run-production"]

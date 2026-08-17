@@ -5,6 +5,7 @@ import { signInWithRedirect } from 'aws-amplify/auth';
 import { rememberReturnTo } from '~/auth/return-to';
 import { useAuthStatus } from '~/hooks/useAuth';
 import { Button, Card, IconBadge, LoadingSpinner, toast } from '~/lib/bleecker';
+import { isTestAuth } from '~/auth/session';
 
 export function LoginForm() {
   const { isAuthenticated, isLoaded } = useAuthStatus();
@@ -14,6 +15,15 @@ export function LoginForm() {
     () => new URLSearchParams(location.search).get('returnTo'),
     [location.search],
   );
+
+  if (isTestAuth()) {
+    return (
+      <div className="flex min-h-80 flex-col items-center justify-center gap-4" role="status">
+        <LoadingSpinner size="lg" />
+        <p className="app-secondary-copy text-sm text-text-secondary">Opening the local test session…</p>
+      </div>
+    );
+  }
 
   useEffect(() => {
     if (requestedReturnTo) rememberReturnTo(requestedReturnTo);

@@ -7,6 +7,7 @@ Centralized authn + authz + feature flag management plane.
 - **Backend** — NestJS administration REST API plus private gRPC authorization API
 - **Frontend** — React Router app (Vite dev server)
 - **Auth** — AWS Cognito (same pool as alcantara)
+- **Infrastructure** — standalone AWS CDK package owned by this repository
 - **Deploy** — Backend via Docker → GHCR → on-prem SSH; Frontend via npm build → S3 → CloudFront
 
 ## Deployment
@@ -18,13 +19,18 @@ deployment patterns:
   to S3, and invalidates the CloudFront entry point.
 - `backend-deploy.yml` tests and builds one Docker image, pushes it to GHCR,
   and deploys it to the on-premises host over SSH. That single container runs
-  both the REST administration API and the authorization gRPC service, exposed
-  through `HTTP_PORT` and `GRPC_PORT`. Database migrations run before the
+  both the REST administration API and the authorization gRPC service on fixed
+  internal ports `3187` and `50087`. Database migrations run before the
   process starts, and deployment succeeds only after both the REST health route
   and gRPC TCP listener are ready.
 
 Both workflows run on pushes to `main` that touch their respective application
 or workflow and may also be started manually with `workflow_dispatch`.
+
+The [`infrastructure`](./infrastructure) package provisions Pompeii's private
+frontend bucket, CloudFront distribution, Route 53 aliases and certificate,
+`/services/pompeii` log group, and scoped GitHub/on-premises deployment users.
+It is self-contained and does not depend on Macondo or any private repository.
 
 All commits must follow the Conventional Commits format, such as
 `feat(auth): add service identity validation`. Running `npm install` at the
@@ -33,18 +39,35 @@ also validates every pushed commit and every pull request, so the policy is not
 limited to an individual developer's local Git configuration.
 
 Repository secrets required by the backend workflow are `DEPLOYMENT_TOKEN`,
-`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `COGNITO_USER_POOL_ID`,
-`COGNITO_CLIENT_ID`, `COGNITO_ALLOWED_CLIENT_IDS`, and `DATABASE_URL`. Backend
-variables are `HTTP_PORT`, `GRPC_PORT`, `AWS_REGION`, `LOGS_GROUP`, and
-`ALLOWED_ORIGINS`; `AUTHZ_DECISION_CACHE_TTL_MS`,
-`AUTHZ_DECISION_CACHE_MAX_ENTRIES`, `SERVICE_FQDN`, `ASSETS_BUCKET_NAME`, and
-`DB_SSL` are optional.
+`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `SECRET_ARN`, and `UNIQUE_KEY`.
+Backend repository variables are only deployment coordinates: `HTTP_PORT`,
+`GRPC_PORT`, `AWS_REGION`, and `LOGS_GROUP`. The host ports map to the fixed
+container ports; they are not application configuration.
+
+`SECRET_ARN` identifies the Secrets Manager entry and `UNIQUE_KEY` selects the
+Pompeii object inside it. That object contains only `DATABASE_URL` and
+`ALLOWED_ORIGINS`. It is loaded before database
+migrations or Nest startup; production fails closed when it is unavailable or
+incomplete. In production, `DATABASE_URL` always comes from this entry and
+cannot be overridden by a container variable. Cognito user-pool and app-client
+IDs are application registry data stored in PostgreSQL.
+
+Example Secrets Manager shape (values are illustrative):
+
+```json
+{
+  "pompeii": {
+    "DATABASE_URL": "postgres://...",
+    "ALLOWED_ORIGINS": "https://pompeii.example"
+  }
+}
+```
 
 The frontend workflow requires AWS credential secrets and the repository
 variables `AWS_REGION`, `BUCKET_NAME`, `DISTRIBUTION_ID`, `VITE_API_FQDN`,
-`VITE_FQDN`, `VITE_LOGIN_REDIRECT_ORIGINS`, `VITE_LOGIN_REDIRECT_SCHEMES`,
-`VITE_COGNITO_USER_POOL_ID`, `VITE_COGNITO_CLIENT_ID`, and
-`VITE_USER_POOL_DOMAIN`.
+`VITE_FQDN`, `VITE_COGNITO_USER_POOL_ID`, `VITE_COGNITO_CLIENT_ID`, and
+`VITE_USER_POOL_DOMAIN`. Client login redirects are application registry data,
+not build configuration.
 
 ## Dev Setup
 
@@ -60,26 +83,38 @@ Backend runs on `http://localhost:3187`, frontend on `http://localhost:5187`.
 
 ## Environment
 
-Copy `.env.example` or use the existing `.env` files in `backend/` and `frontend/`.
+Only the public Cognito identifiers needed to initiate browser login belong in
+a local environment file:
 
-| Variable | Description |
-|---|---|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `COGNITO_USER_POOL_ID` | Cognito pool ID |
-| `COGNITO_CLIENT_ID` | Cognito app client ID |
-| `COGNITO_ALLOWED_CLIENT_IDS` | Comma-separated Auburndale, Angelina, Alcantara, and Celesti client IDs whose ID tokens client services may submit to gRPC, in addition to Pompeii's own client ID |
-| `GRPC_PORT` | Private authorization gRPC port (default `50087`) |
-| `AUTHZ_DECISION_CACHE_TTL_MS` | Allow/deny cache TTL in milliseconds (default `5000`) |
-| `AUTHZ_DECISION_CACHE_MAX_ENTRIES` | Maximum in-memory authorization decisions retained per instance (default `10000`) |
-| `VITE_API_PORT` | Backend port for local dev |
-| `VITE_API_FQDN` | Backend FQDN for production |
-| `VITE_FQDN` | Frontend FQDN for Cognito redirects |
-| `VITE_LOGIN_REDIRECT_ORIGINS` | Comma-separated Auburndale, Angelina, Alcantara, and Celesti origins Pompeii may redirect to after login |
-| `VITE_LOGIN_REDIRECT_SCHEMES` | Explicit native callback schemes Pompeii may redirect to (for example `celesti`) |
+```bash
+cp frontend/.env.example frontend/.env
+```
+
+Docker Compose owns all local backend configuration. It starts a private
+PostgreSQL 17 container, supplies the backend connection URL, waits for
+PostgreSQL to become healthy, runs migrations, and then starts the backend. The
+local browser origin is an application default. PostgreSQL data persists in the
+`pompeii-local_postgres-data` named volume.
+The minimal backend `.env.example` documents the three Secrets Manager locator
+inputs used by deployment: `AWS_REGION`, `SECRET_ARN`, and `UNIQUE_KEY`.
+Compose does not consume that file. Production receives `DATABASE_URL` and
+`ALLOWED_ORIGINS` exclusively from the selected Secrets Manager object.
+
+The local frontend file contains exactly three public values:
+`VITE_COGNITO_USER_POOL_ID`, `VITE_COGNITO_CLIENT_ID`, and
+`VITE_USER_POOL_DOMAIN`. Local API URLs, ports, redirect origins, PostgreSQL,
+cache limits, and backend mode are defaults or Compose-owned values and do not
+belong in that file.
 
 ## Schema
 
 Run `cd backend && npm run db:migrate` when deploying schema changes.
+
+Each application row must have both `cognito_user_pool_id` and
+`cognito_client_id` populated before its tokens can be accepted. For the
+Pompeii admin application, populate those columns before deploying this
+authentication change; once access is available, administrators can manage the
+same values from the Applications screen.
 
 ## Authorization
 
@@ -105,13 +140,33 @@ Client services send their namespaced permission key and the end-user Cognito ID
 token to the gRPC `Authorize` method; they fail closed when Pompeii denies or is
 unavailable.
 
+Cognito user-pool and app-client IDs are managed in the `applications`
+registry, not backend runtime configuration. Both REST and gRPC accept a signed
+ID token only when its issuer matches `applications.cognito_user_pool_id` and
+its `aud` claim matches the unique `applications.cognito_client_id`. New
+applications require both values, and protected application administration can
+rotate them.
+
+The migration adds both columns without guessing or copying values from
+configuration. Before cutting over authentication, populate each existing
+application record—especially the `pompeii` application—with its Cognito pool
+and app-client IDs. An unconfigured application is deliberately denied.
+
+Each client application also owns `login_redirect_origins` and
+`login_redirect_schemes`. Web entries are normalized origins such as
+`https://angelina.example`; native entries are custom schemes such as
+`celesti`. Both lists are stored in PostgreSQL and managed from the protected
+Applications screen. They are never frontend or deployment environment
+variables.
+
 ## Centralized login
 
 Pompeii is the only user-facing login surface. Auburndale, Angelina, Alcantara,
 and Celesti redirect unauthenticated browsers to `/login?returnTo=...` on the
-Pompeii frontend. Pompeii validates the destination against
-`VITE_LOGIN_REDIRECT_ORIGINS`, completes Cognito login, and returns the browser
-to the client. The client then performs a transparent app-client OAuth exchange
+Pompeii frontend. The backend validates the destination against the matching
+application's database-backed web origins or native schemes and returns the
+approved handoff URL. The frontend never decides which destinations are
+trusted. The client then performs a transparent app-client OAuth exchange
 against the existing Cognito SSO session; Cognito tokens never appear in the
 redirect URL. Each client origin must remain registered as a callback URL on
 its own Cognito app client.

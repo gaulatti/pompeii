@@ -20,11 +20,7 @@ import {
 import type { Route } from './+types/root';
 import './app.css';
 import { getStore } from './state';
-import {
-  addSsoHandoff,
-  takeReturnTo,
-  validateReturnTo,
-} from './auth/return-to';
+import { resolveReturnTo, takeReturnTo } from './auth/return-to';
 import { useAuthStatus } from './hooks/useAuth';
 
 /**
@@ -52,9 +48,8 @@ export const links: Route.LinksFunction = () => [];
  */
 const userPoolId = import.meta.env.VITE_COGNITO_USER_POOL_ID;
 const userPoolClientId = import.meta.env.VITE_COGNITO_CLIENT_ID;
-const userPoolDomain =
-  import.meta.env.VITE_USER_POOL_DOMAIN || import.meta.env.VITE_COGNITO_DOMAIN;
-const fqdn = import.meta.env.VITE_FQDN;
+const userPoolDomain = import.meta.env.VITE_USER_POOL_DOMAIN;
+const fqdn = import.meta.env.VITE_FQDN || 'http://localhost:5187';
 
 /**
  * Configuration for the AWS Amplify library.
@@ -98,16 +93,23 @@ function LoginReturnBridge(): null {
 
   useEffect(() => {
     if (!isLoaded || !isAuthenticated) return;
-    const requestedReturnTo = validateReturnTo(
-      new URLSearchParams(window.location.search).get('returnTo'),
+    const requestedReturnTo = new URLSearchParams(window.location.search).get(
+      'returnTo',
     );
     const storedReturnTo = takeReturnTo();
     const returnTo = requestedReturnTo ?? storedReturnTo;
-    if (returnTo) {
-      window.location.replace(addSsoHandoff(returnTo));
-    } else if (window.location.pathname === '/login') {
-      window.location.replace('/');
-    }
+    let cancelled = false;
+    void resolveReturnTo(returnTo).then((redirectTo) => {
+      if (cancelled) return;
+      if (redirectTo) {
+        window.location.replace(redirectTo);
+      } else if (window.location.pathname === '/login') {
+        window.location.replace('/');
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [isAuthenticated, isLoaded]);
 
   return null;

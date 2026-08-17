@@ -57,6 +57,33 @@ export class Application extends Model<
   })
   description?: string;
 
+  @Column({
+    type: DataType.STRING(255),
+    allowNull: true,
+  })
+  cognito_user_pool_id?: string;
+
+  @Column({
+    type: DataType.STRING(255),
+    allowNull: true,
+    unique: true,
+  })
+  cognito_client_id?: string;
+
+  @Column({
+    type: DataType.ARRAY(DataType.TEXT),
+    allowNull: false,
+    defaultValue: [],
+  })
+  login_redirect_origins!: CreationOptional<string[]>;
+
+  @Column({
+    type: DataType.ARRAY(DataType.TEXT),
+    allowNull: false,
+    defaultValue: [],
+  })
+  login_redirect_schemes!: CreationOptional<string[]>;
+
   @BelongsTo(() => Team)
   team?: Team;
 

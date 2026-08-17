@@ -8,10 +8,9 @@ export class JSONLogger extends ConsoleLogger implements LoggerService {
   /**
    * A flag indicating whether the logger is enabled.
    *
-   * Ideally, the JSON Logger should be enabled only in containerized environments
-   * to enable easy CloudWatch logging.
+   * Production emits structured logs for the configured log driver.
    */
-  private enabled = process.env.CONTAINERIZED === 'true';
+  private enabled = process.env.NODE_ENV === 'production';
 
   /**
    * The realm for the logger.
