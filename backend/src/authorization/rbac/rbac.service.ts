@@ -214,23 +214,27 @@ export class RbacService {
     this.clearCache();
   }
 
-  async permissionBelongsToClientApplication(
+  async resolvePermissionApplicationScope(
     cognitoClientId: string,
     key: string,
-  ): Promise<boolean> {
-    return Boolean(
-      await this.permissions.findOne({
-        attributes: ['id'],
-        where: { key },
-        include: [
-          {
-            model: Application,
-            required: true,
-            where: { cognito_client_id: cognitoClientId },
-          },
-        ],
-      }),
-    );
+  ): Promise<{ applicationId: number; teamId: number } | null> {
+    const permission = await this.permissions.findOne({
+      attributes: ['id', 'application_id'],
+      where: { key },
+      include: [
+        {
+          model: Application,
+          attributes: ['id', 'team_id'],
+          required: true,
+          where: { cognito_client_id: cognitoClientId },
+        },
+      ],
+    });
+    if (!permission?.application) return null;
+    return {
+      applicationId: permission.application_id,
+      teamId: permission.application.team_id,
+    };
   }
 
   async addPermissionToRole(
@@ -304,6 +308,15 @@ export class RbacService {
     role_id: number;
     team_id?: number | null;
   }) {
+    const role = await this.roles.findByPk(input.role_id, {
+      include: [Application],
+    });
+    if (!role) throw new NotFoundException('Role not found');
+    if (input.team_id != null && role.application?.team_id !== input.team_id) {
+      throw new ConflictException(
+        'Team-scoped role assignments must use the application owning team',
+      );
+    }
     const [assignment] = await this.assignments.findOrCreate({
       where: {
         user_id: input.user_id,

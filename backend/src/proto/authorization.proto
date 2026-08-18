@@ -13,7 +13,8 @@ message AuthorizeRequest {
   string bearer_token = 1;
   // A configured RBAC permission key, for example "application:write".
   string permission = 2;
-  // Zero means global scope; a positive value evaluates global plus team scope.
+  // Zero lets Pompeii derive the owning team from the permission's application.
+  // A positive value is accepted only when it matches that owning team.
   int64 team_id = 3;
 }
 

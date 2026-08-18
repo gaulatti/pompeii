@@ -141,7 +141,13 @@ describe('RbacService', () => {
   });
 
   it('matches a permission through its owning application shared client', async () => {
-    const permissions = { findOne: jest.fn().mockResolvedValue({ id: 20 }) };
+    const permissions = {
+      findOne: jest.fn().mockResolvedValue({
+        id: 20,
+        application_id: 3,
+        application: { id: 3, team_id: 7 },
+      }),
+    };
     const service = new RbacService(
       {} as any,
       {} as any,
@@ -151,21 +157,43 @@ describe('RbacService', () => {
     );
 
     await expect(
-      service.permissionBelongsToClientApplication(
+      service.resolvePermissionApplicationScope(
         'shared-client',
         'celesti:device:read',
       ),
-    ).resolves.toBe(true);
+    ).resolves.toEqual({ applicationId: 3, teamId: 7 });
     expect(permissions.findOne).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { key: 'celesti:device:read' },
         include: [
           expect.objectContaining({
             required: true,
+            attributes: ['id', 'team_id'],
             where: { cognito_client_id: 'shared-client' },
           }),
         ],
       }),
     );
+  });
+
+  it('rejects a team-scoped role assignment outside its application team', async () => {
+    const assignments = { findOrCreate: jest.fn() };
+    const service = new RbacService(
+      {} as any,
+      {
+        findByPk: jest.fn().mockResolvedValue({
+          id: 4,
+          application: { id: 3, team_id: 7 },
+        }),
+      } as any,
+      {} as any,
+      {} as any,
+      assignments as any,
+    );
+
+    await expect(
+      service.assignRole({ user_id: 1, role_id: 4, team_id: 9 }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(assignments.findOrCreate).not.toHaveBeenCalled();
   });
 });

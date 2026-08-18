@@ -21,7 +21,9 @@ describe('AuthorizationGrpcController', () => {
 
   it('evaluates global and requested team scope for a provisioned user', async () => {
     const rbac = {
-      permissionBelongsToClientApplication: jest.fn().mockResolvedValue(true),
+      resolvePermissionApplicationScope: jest
+        .fn()
+        .mockResolvedValue({ applicationId: 4, teamId: 9 }),
       authorizeUser: jest.fn().mockResolvedValue({
         allowed: true,
         reason: 'ALLOW',
@@ -61,7 +63,9 @@ describe('AuthorizationGrpcController', () => {
       resolveAuthorizationUser: jest.fn().mockResolvedValue({ id: 51 }),
     };
     const rbac = {
-      permissionBelongsToClientApplication: jest.fn().mockResolvedValue(true),
+      resolvePermissionApplicationScope: jest
+        .fn()
+        .mockResolvedValue({ applicationId: 8, teamId: 12 }),
       authorizeUser: jest.fn().mockResolvedValue({
         allowed: false,
         reason: 'DENY_NO_PERMISSION',
@@ -98,13 +102,47 @@ describe('AuthorizationGrpcController', () => {
     expect(rbac.authorizeUser).toHaveBeenCalledWith(
       51,
       'angelina:poll:read',
-      null,
+      12,
     );
+  });
+
+  it('rejects a requested team that does not own the permission application', async () => {
+    const rbac = {
+      resolvePermissionApplicationScope: jest
+        .fn()
+        .mockResolvedValue({ applicationId: 8, teamId: 12 }),
+      authorizeUser: jest.fn(),
+    };
+    const controller = new AuthorizationGrpcController(
+      {
+        verifyBearerToken: jest.fn().mockResolvedValue({
+          sub: 'subject-1',
+          pompeii_cognito_client_id: 'shared-client',
+        }),
+      } as any,
+      {
+        resolveAuthorizationUser: jest.fn().mockResolvedValue({ id: 42 }),
+      } as any,
+      rbac as any,
+    );
+
+    await expect(
+      controller.authorize({
+        bearer_token: 'token',
+        permission: 'angelina:poll:read',
+        team_id: 99,
+      }),
+    ).resolves.toMatchObject({
+      authenticated: true,
+      allowed: false,
+      reason: 'DENY_APPLICATION_TEAM_MISMATCH',
+    });
+    expect(rbac.authorizeUser).not.toHaveBeenCalled();
   });
 
   it('denies a permission that is not registered to the token application', async () => {
     const rbac = {
-      permissionBelongsToClientApplication: jest.fn().mockResolvedValue(false),
+      resolvePermissionApplicationScope: jest.fn().mockResolvedValue(null),
       authorizeUser: jest.fn(),
     };
     const controller = new AuthorizationGrpcController(
@@ -130,7 +168,7 @@ describe('AuthorizationGrpcController', () => {
       allowed: false,
       reason: 'DENY_UNREGISTERED_APPLICATION_PERMISSION',
     });
-    expect(rbac.permissionBelongsToClientApplication).toHaveBeenCalledWith(
+    expect(rbac.resolvePermissionApplicationScope).toHaveBeenCalledWith(
       'shared-client',
       'another-app:admin',
     );

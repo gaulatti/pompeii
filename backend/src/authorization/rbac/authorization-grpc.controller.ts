@@ -65,12 +65,11 @@ export class AuthorizationGrpcController {
       };
     }
 
-    const registeredPermission =
-      await this.rbac.permissionBelongsToClientApplication(
-        identity.pompeii_cognito_client_id,
-        request.permission.trim(),
-      );
-    if (!registeredPermission) {
+    const permissionScope = await this.rbac.resolvePermissionApplicationScope(
+      identity.pompeii_cognito_client_id,
+      request.permission.trim(),
+    );
+    if (!permissionScope) {
       return {
         authenticated: true,
         allowed: false,
@@ -82,10 +81,20 @@ export class AuthorizationGrpcController {
     }
 
     const requestedTeamId = Number(request.team_id ?? 0);
+    if (requestedTeamId > 0 && requestedTeamId !== permissionScope.teamId) {
+      return {
+        authenticated: true,
+        allowed: false,
+        reason: 'DENY_APPLICATION_TEAM_MISMATCH',
+        subject: identity.sub,
+        effective_permissions: [],
+        roles: [],
+      };
+    }
     const decision = await this.rbac.authorizeUser(
       user.id,
       request.permission.trim(),
-      requestedTeamId > 0 ? requestedTeamId : null,
+      permissionScope.teamId,
     );
     return {
       authenticated: true,
