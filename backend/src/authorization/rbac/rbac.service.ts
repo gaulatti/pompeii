@@ -214,14 +214,21 @@ export class RbacService {
     this.clearCache();
   }
 
-  async permissionBelongsToApplication(
-    applicationId: number,
+  async permissionBelongsToClientApplication(
+    cognitoClientId: string,
     key: string,
   ): Promise<boolean> {
     return Boolean(
       await this.permissions.findOne({
         attributes: ['id'],
-        where: { application_id: applicationId, key },
+        where: { key },
+        include: [
+          {
+            model: Application,
+            required: true,
+            where: { cognito_client_id: cognitoClientId },
+          },
+        ],
       }),
     );
   }

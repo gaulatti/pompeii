@@ -149,9 +149,10 @@ unavailable.
 Cognito user-pool and app-client IDs are managed in the `applications`
 registry, not backend runtime configuration. Both REST and gRPC accept a signed
 ID token only when its issuer matches `applications.cognito_user_pool_id` and
-its `aud` claim matches the unique `applications.cognito_client_id`. New
-applications require both values, and protected application administration can
-rotate them.
+its `aud` claim matches `applications.cognito_client_id`. Applications may
+share a Cognito registration; gRPC still requires the requested permission to
+belong to an application registered for that client. New applications require
+both values, and protected application administration can rotate them.
 
 The schema migration adds both columns without guessing values. A later
 self-registration migration supplies Pompeii's own values during deployment;

@@ -26,8 +26,10 @@ for databases whose connection URL does not request it.
 
 - Cognito JWT validation via JWKS
 - Cognito user-pool and app-client IDs are managed on database `applications`
-  records. The app-client ID is unique. REST and gRPC tokens are rejected unless
-  their issuer and `aud` claim match the registered pair.
+  records. Multiple applications may share a registered pool/client pair. REST
+  and gRPC tokens are rejected unless their issuer and `aud` claim match a
+  registered pair; gRPC additionally checks that the requested permission is
+  owned by an application registered for that client.
 - ID tokens (`token_use=id`) are enforced
 
 Each application owns its Cognito registration, roles, and permission catalog.

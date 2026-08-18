@@ -139,4 +139,33 @@ describe('RbacService', () => {
     );
     expect(rolePermissions.findOrCreate).not.toHaveBeenCalled();
   });
+
+  it('matches a permission through its owning application shared client', async () => {
+    const permissions = { findOne: jest.fn().mockResolvedValue({ id: 20 }) };
+    const service = new RbacService(
+      {} as any,
+      {} as any,
+      permissions as any,
+      {} as any,
+      {} as any,
+    );
+
+    await expect(
+      service.permissionBelongsToClientApplication(
+        'shared-client',
+        'celesti:device:read',
+      ),
+    ).resolves.toBe(true);
+    expect(permissions.findOne).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { key: 'celesti:device:read' },
+        include: [
+          expect.objectContaining({
+            required: true,
+            where: { cognito_client_id: 'shared-client' },
+          }),
+        ],
+      }),
+    );
+  });
 });

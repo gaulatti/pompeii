@@ -11,17 +11,9 @@ module.exports = {
       type: Sequelize.STRING(255),
       allowNull: true,
     });
-    await queryInterface.addIndex('applications', ['cognito_client_id'], {
-      name: 'applications_cognito_client_id_unique',
-      unique: true,
-    });
   },
 
   async down(queryInterface) {
-    await queryInterface.removeIndex(
-      'applications',
-      'applications_cognito_client_id_unique',
-    );
     await queryInterface.removeColumn('applications', 'cognito_client_id');
     await queryInterface.removeColumn('applications', 'cognito_user_pool_id');
   },

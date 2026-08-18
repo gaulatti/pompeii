@@ -36,7 +36,7 @@ export class AuthorizationGrpcController {
       family_name?: string;
       name?: string;
       identities?: { providerName?: string }[];
-      pompeii_application_id: number;
+      pompeii_cognito_client_id: string;
     };
     try {
       identity = await this.tokens.verifyBearerToken(
@@ -65,10 +65,11 @@ export class AuthorizationGrpcController {
       };
     }
 
-    const registeredPermission = await this.rbac.permissionBelongsToApplication(
-      identity.pompeii_application_id,
-      request.permission.trim(),
-    );
+    const registeredPermission =
+      await this.rbac.permissionBelongsToClientApplication(
+        identity.pompeii_cognito_client_id,
+        request.permission.trim(),
+      );
     if (!registeredPermission) {
       return {
         authenticated: true,

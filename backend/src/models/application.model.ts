@@ -68,7 +68,6 @@ export class Application extends Model<
   @Column({
     type: DataType.STRING(255),
     allowNull: true,
-    unique: true,
   })
   cognito_client_id?: string;
 

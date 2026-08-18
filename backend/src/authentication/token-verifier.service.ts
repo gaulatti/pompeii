@@ -19,7 +19,7 @@ export class TokenVerifierService {
     JwtPayload & {
       sub: string;
       email: string;
-      pompeii_application_id: number;
+      pompeii_cognito_client_id: string;
     }
   > {
     const token = bearerToken.toLowerCase().startsWith('bearer ')
@@ -48,11 +48,11 @@ export class TokenVerifierService {
           }
           return {
             ...payload,
-            pompeii_application_id: application.id,
+            pompeii_cognito_client_id: application.cognito_client_id as string,
           } as JwtPayload & {
             sub: string;
             email: string;
-            pompeii_application_id: number;
+            pompeii_cognito_client_id: string;
           };
         }
       } catch {
@@ -107,11 +107,11 @@ export class TokenVerifierService {
           }
           resolve({
             ...decodedPayload,
-            pompeii_application_id: application.id,
+            pompeii_cognito_client_id: application.cognito_client_id as string,
           } as JwtPayload & {
             sub: string;
             email: string;
-            pompeii_application_id: number;
+            pompeii_cognito_client_id: string;
           });
         },
       );
