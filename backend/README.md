@@ -18,6 +18,9 @@ before both migrations and Nest startup. Docker Compose owns local backend
 configuration: it provides PostgreSQL 17 and a single `DATABASE_URL`, waits for
 the database health check, and applies migrations before starting Nest. No
 backend env file is required for local development.
+PostgreSQL transport settings belong in `DATABASE_URL`; append
+`?sslmode=require` when the target requires SSL. Production does not force SSL
+for databases whose connection URL does not request it.
 
 ## Auth
 

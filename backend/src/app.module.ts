@@ -24,7 +24,6 @@ import { RolePermission } from './models/role-permission.model';
   imports: [
     SequelizeModule.forRootAsync({
       useFactory: () => {
-        const isProduction = process.env.NODE_ENV === 'production';
         const defaultConfig: SequelizeModuleOptions = {
           dialect: 'postgres',
           port: +5432,
@@ -45,14 +44,6 @@ import { RolePermission } from './models/role-permission.model';
           ],
           autoLoadModels: true,
           logging: false,
-          dialectOptions: isProduction
-            ? {
-                ssl: {
-                  require: true,
-                  rejectUnauthorized: false,
-                },
-              }
-            : undefined,
         };
 
         const databaseUrl = process.env.DATABASE_URL;
