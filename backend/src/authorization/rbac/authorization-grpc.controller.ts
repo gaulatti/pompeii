@@ -36,6 +36,7 @@ export class AuthorizationGrpcController {
       family_name?: string;
       name?: string;
       identities?: { providerName?: string }[];
+      pompeii_application_id: number;
     };
     try {
       identity = await this.tokens.verifyBearerToken(
@@ -58,6 +59,21 @@ export class AuthorizationGrpcController {
         authenticated: true,
         allowed: false,
         reason: 'DENY_UNKNOWN_USER',
+        subject: identity.sub,
+        effective_permissions: [],
+        roles: [],
+      };
+    }
+
+    const registeredPermission = await this.rbac.permissionBelongsToApplication(
+      identity.pompeii_application_id,
+      request.permission.trim(),
+    );
+    if (!registeredPermission) {
+      return {
+        authenticated: true,
+        allowed: false,
+        reason: 'DENY_UNREGISTERED_APPLICATION_PERMISSION',
         subject: identity.sub,
         effective_permissions: [],
         roles: [],

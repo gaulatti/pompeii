@@ -1,9 +1,17 @@
-import { ArrowLeft, ArrowRight, Download, Plus, ShieldCheck, Upload } from 'lucide-react';
+import {
+  ArrowLeft,
+  Download,
+  Plus,
+  ShieldCheck,
+  Trash2,
+  Upload,
+} from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
-import { useNavigate, useParams } from 'react-router';
+import { useParams } from 'react-router';
 import { Method, sendRequest } from '~/clients/api';
 import {
+  AlertDialog,
   Button,
   Card,
   DataTable,
@@ -11,12 +19,11 @@ import {
   ErrorState,
   Field,
   FileInput,
+  IconButton,
   Input,
   PageHeader,
   SearchInput,
-  Select,
   SkeletonTable,
-  StatusBadge,
   toast,
   type ColumnDef,
 } from '~/lib/bleecker';
@@ -29,29 +36,16 @@ type Application = {
   team_id: number;
   cognito_user_pool_id?: string;
   cognito_client_id?: string;
-  login_redirect_origins: string[];
-  login_redirect_schemes: string[];
 };
-type Feature = {
+
+type Permission = {
   id: number;
-  name: string;
-  slug: string;
-  default_value: string;
-  description?: string;
+  application_id: number;
+  key: string;
+  description?: string | null;
 };
 
-const SAMPLE_FEATURE = {
-  name: 'Account Access',
-  default_value: 'C',
-  description: 'Can access the account section',
-};
-
-const LEVEL_OPTIONS = [
-  { label: 'C · Control', value: 'C' },
-  { label: 'T1 · Treatment 1', value: 'T1' },
-  { label: 'T2 · Treatment 2', value: 'T2' },
-  { label: 'T3 · Treatment 3', value: 'T3' },
-];
+type ManifestPermission = { key: string; description?: string };
 
 function downloadJson(filename: string, value: unknown) {
   const blob = new Blob([JSON.stringify(value, null, 2)], {
@@ -65,40 +59,103 @@ function downloadJson(filename: string, value: unknown) {
   URL.revokeObjectURL(url);
 }
 
+function parseCsv(text: string): ManifestPermission[] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let quoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (quoted) {
+      if (character === '"' && text[index + 1] === '"') {
+        cell += '"';
+        index += 1;
+      } else if (character === '"') {
+        quoted = false;
+      } else {
+        cell += character;
+      }
+    } else if (character === '"') {
+      quoted = true;
+    } else if (character === ',') {
+      row.push(cell);
+      cell = '';
+    } else if (character === '\n') {
+      row.push(cell.replace(/\r$/, ''));
+      rows.push(row);
+      row = [];
+      cell = '';
+    } else {
+      cell += character;
+    }
+  }
+  if (quoted) throw new Error('CSV contains an unterminated quoted field.');
+  if (cell || row.length) {
+    row.push(cell.replace(/\r$/, ''));
+    rows.push(row);
+  }
+  const nonEmpty = rows.filter((candidate) =>
+    candidate.some((value) => value.trim()),
+  );
+  if (!nonEmpty.length) throw new Error('CSV file is empty.');
+  const headers = nonEmpty[0].map((value) => value.trim().toLowerCase());
+  const keyIndex = headers.indexOf('key');
+  const descriptionIndex = headers.indexOf('description');
+  if (keyIndex < 0) throw new Error('CSV header must include “key”.');
+  return nonEmpty.slice(1).map((values) => ({
+    key: values[keyIndex]?.trim() ?? '',
+    description:
+      descriptionIndex >= 0 && values[descriptionIndex]?.trim()
+        ? values[descriptionIndex].trim()
+        : undefined,
+  }));
+}
+
+function parseManifest(file: File, text: string): ManifestPermission[] {
+  if (file.name.toLowerCase().endsWith('.csv') || file.type === 'text/csv') {
+    return parseCsv(text);
+  }
+  const parsed = JSON.parse(text);
+  if (!Array.isArray(parsed)) throw new Error('JSON must contain an array.');
+  return parsed.map((item) => ({
+    key: typeof item?.key === 'string' ? item.key : '',
+    description:
+      typeof item?.description === 'string' ? item.description : undefined,
+  }));
+}
+
 export default function ApplicationDetailPage() {
   const { id } = useParams();
-  const navigate = useNavigate();
   const superAdmin = useSelector(isSuperAdmin);
   const [app, setApp] = useState<Application | null>(null);
-  const [features, setFeatures] = useState<Feature[]>([]);
+  const [permissions, setPermissions] = useState<Permission[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [importErrors, setImportErrors] = useState<string[]>([]);
-  const [importing, setImporting] = useState(false);
-  const [featureName, setFeatureName] = useState('');
-  const [featureDefault, setFeatureDefault] = useState('C');
-  const [savingFeature, setSavingFeature] = useState(false);
+  const [key, setKey] = useState('');
+  const [description, setDescription] = useState('');
   const [userPoolId, setUserPoolId] = useState('');
   const [clientId, setClientId] = useState('');
-  const [redirectOrigins, setRedirectOrigins] = useState('');
-  const [redirectSchemes, setRedirectSchemes] = useState('');
-  const [savingApplication, setSavingApplication] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importErrors, setImportErrors] = useState<string[]>([]);
+  const [pendingRemoval, setPendingRemoval] = useState<Permission | null>(null);
 
   const loadData = async (showLoading = true) => {
     if (showLoading) setLoading(true);
     setError(null);
     try {
-      const [appData, featureData] = await Promise.all([
+      const [applicationData, permissionData] = await Promise.all([
         sendRequest(Method.GET, `authorization/applications/${id}`),
-        sendRequest(Method.GET, `authorization/applications/${id}/features`),
+        sendRequest(
+          Method.GET,
+          `authorization/applications/${id}/rbac-permissions`,
+        ),
       ]);
-      setApp(appData ?? null);
-      setUserPoolId(appData?.cognito_user_pool_id ?? '');
-      setClientId(appData?.cognito_client_id ?? '');
-      setRedirectOrigins((appData?.login_redirect_origins ?? []).join(', '));
-      setRedirectSchemes((appData?.login_redirect_schemes ?? []).join(', '));
-      setFeatures(Array.isArray(featureData) ? featureData : []);
+      setApp(applicationData ?? null);
+      setUserPoolId(applicationData?.cognito_user_pool_id ?? '');
+      setClientId(applicationData?.cognito_client_id ?? '');
+      setPermissions(Array.isArray(permissionData) ? permissionData : []);
     } catch (cause: any) {
       const status = cause?.response?.status;
       setError(
@@ -117,41 +174,85 @@ export default function ApplicationDetailPage() {
     if (id) void loadData();
   }, [id]);
 
-  const filteredFeatures = useMemo(() => {
+  const filteredPermissions = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return features;
-    return features.filter((feature) =>
-      [feature.name, feature.slug, feature.description ?? ''].some((value) =>
+    if (!query) return permissions;
+    return permissions.filter((permission) =>
+      [permission.key, permission.description ?? ''].some((value) =>
         value.toLowerCase().includes(query),
       ),
     );
-  }, [features, search]);
+  }, [permissions, search]);
 
-  const createFeature = async (event: React.FormEvent) => {
+  const registerPermissions = async (manifest: ManifestPermission[]) => {
+    if (!app) return;
+    await sendRequest(
+      Method.POST,
+      `authorization/applications/${app.id}/rbac-permissions`,
+      { permissions: manifest },
+    );
+    await loadData(false);
+  };
+
+  const registerOne = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!featureName.trim() || !app) return;
-    setSavingFeature(true);
+    if (!key.trim()) return;
+    setSaving(true);
     try {
-      await sendRequest(Method.POST, 'authorization/features', {
-        application_id: app.id,
-        name: featureName.trim(),
-        default_value: featureDefault,
-      });
-      setFeatureName('');
-      setFeatureDefault('C');
-      await loadData(false);
+      await registerPermissions([
+        { key: key.trim(), description: description.trim() || undefined },
+      ]);
+      setKey('');
+      setDescription('');
       toast.success('Permission registered');
-    } catch {
-      toast.error('Permission could not be registered');
+    } catch (cause: any) {
+      toast.error('Permission could not be registered', {
+        description:
+          cause?.response?.data?.message ??
+          'Check that the key is unique and belongs to this application.',
+      });
     } finally {
-      setSavingFeature(false);
+      setSaving(false);
+    }
+  };
+
+  const importManifest = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    setImportErrors([]);
+    try {
+      const manifest = parseManifest(file, await file.text());
+      if (!manifest.length)
+        throw new Error('Manifest contains no permissions.');
+      const errors = manifest.flatMap((permission, index) =>
+        permission.key.trim() ? [] : [`Row ${index + 1}: “key” is required.`],
+      );
+      if (errors.length) {
+        setImportErrors(errors);
+        return;
+      }
+      await registerPermissions(manifest);
+      toast.success('Permission manifest imported', {
+        description: `${manifest.length} ${manifest.length === 1 ? 'permission' : 'permissions'} registered.`,
+      });
+    } catch (cause: any) {
+      const message = cause?.response?.data?.message;
+      setImportErrors([
+        typeof message === 'string'
+          ? message
+          : cause?.message || 'Manifest could not be imported.',
+      ]);
+    } finally {
+      setImporting(false);
+      event.target.value = '';
     }
   };
 
   const saveApplication = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!app || !userPoolId.trim() || !clientId.trim()) return;
-    setSavingApplication(true);
+    setSaving(true);
     try {
       const updated = await sendRequest(
         Method.PATCH,
@@ -159,114 +260,52 @@ export default function ApplicationDetailPage() {
         {
           cognito_user_pool_id: userPoolId.trim(),
           cognito_client_id: clientId.trim(),
-          login_redirect_origins: redirectOrigins
-            .split(',')
-            .map((value) => value.trim())
-            .filter(Boolean),
-          login_redirect_schemes: redirectSchemes
-            .split(',')
-            .map((value) => value.trim())
-            .filter(Boolean),
         },
       );
       setApp(updated);
-      setRedirectOrigins((updated?.login_redirect_origins ?? []).join(', '));
-      setRedirectSchemes((updated?.login_redirect_schemes ?? []).join(', '));
-      toast.success('Application configuration updated');
+      toast.success('Application authentication updated');
     } catch {
-      toast.error('Application configuration could not be updated');
+      toast.error('Application authentication could not be updated');
     } finally {
-      setSavingApplication(false);
+      setSaving(false);
     }
   };
 
-  const handleFileChange = async (
-    event: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    const file = event.target.files?.[0];
-    if (!file || !app) return;
-    setImportErrors([]);
-    setImporting(true);
+  const removePermission = async () => {
+    if (!app || !pendingRemoval) return;
+    setSaving(true);
     try {
-      const parsed = JSON.parse(await file.text());
-      if (!Array.isArray(parsed)) {
-        setImportErrors(['The file must contain a JSON array of feature overrides.']);
-        return;
-      }
-
-      const errors: string[] = [];
-      parsed.forEach((item, index) => {
-        if (!item.name || typeof item.name !== 'string')
-          errors.push(`Item ${index + 1}: “name” is required.`);
-        if (
-          !item.default_value ||
-          !LEVEL_OPTIONS.some((option) => option.value === item.default_value)
-        ) {
-          errors.push(
-            `Item ${index + 1}: “default_value” must be C, T1, T2, or T3.`,
-          );
-        }
-      });
-      if (errors.length) {
-        setImportErrors(errors);
-        return;
-      }
-
-      await sendRequest(Method.POST, 'authorization/features/bulk', {
-        application_id: app.id,
-        features: parsed.map((feature) => ({
-          name: feature.name,
-          slug: feature.slug,
-          default_value: feature.default_value,
-          description: feature.description,
-        })),
-      });
+      await sendRequest(
+        Method.DELETE,
+        `authorization/applications/${app.id}/rbac-permissions/${pendingRemoval.id}`,
+      );
+      setPendingRemoval(null);
       await loadData(false);
-      toast.success('Permissions imported', {
-        description: `${parsed.length} ${parsed.length === 1 ? 'item' : 'items'} processed.`,
-      });
-    } catch (cause: any) {
-      setImportErrors([cause?.message || 'The JSON file could not be parsed.']);
+      toast.success('Permission removed');
+    } catch {
+      toast.error('Permission could not be removed');
     } finally {
-      setImporting(false);
-      event.target.value = '';
+      setSaving(false);
     }
   };
 
-  const columns: ColumnDef<Feature>[] = [
+  const columns: ColumnDef<Permission>[] = [
     {
-      key: 'name',
-      header: 'Permission',
+      key: 'key',
+      header: 'Permission key',
       sortable: true,
-      cell: (feature) => (
-        <div className="min-w-56">
-          <p className="font-medium">{feature.name}</p>
-          <p className="app-secondary-copy mt-0.5 text-xs text-text-secondary">
-            {feature.description || feature.slug}
-          </p>
-        </div>
+      cell: (permission) => (
+        <span className="font-medium">{permission.key}</span>
       ),
     },
     {
-      key: 'slug',
-      header: 'Key',
+      key: 'description',
+      header: 'Description',
       sortable: true,
-      cell: (feature) => (
-        <span className="app-secondary-copy text-xs text-text-secondary">
-          {feature.slug}
+      cell: (permission) => (
+        <span className="app-secondary-copy text-sm text-text-secondary">
+          {permission.description || 'No description'}
         </span>
-      ),
-    },
-    {
-      key: 'default_value',
-      header: 'Global default',
-      align: 'center',
-      sortable: true,
-      cell: (feature) => (
-        <StatusBadge
-          label={feature.default_value}
-          variant={feature.default_value === 'C' ? 'default' : 'info'}
-        />
       ),
     },
     {
@@ -274,44 +313,33 @@ export default function ApplicationDetailPage() {
       header: 'Actions',
       align: 'right',
       sortable: false,
-      cell: (feature) => (
-        <Button
-          onClick={() =>
-            navigate(`/applications/${id}/permissions/${feature.id}`)
-          }
-          size="sm"
-          variant="secondary"
-        >
-          Manage overrides <ArrowRight size={14} />
-        </Button>
-      ),
+      cell: (permission) =>
+        superAdmin ? (
+          <IconButton
+            aria-label={`Remove ${permission.key}`}
+            onClick={() => setPendingRemoval(permission)}
+            size="sm"
+            variant="ghost"
+          >
+            <Trash2 className="text-terracotta" size={14} />
+          </IconButton>
+        ) : null,
     },
   ];
 
   if (loading) {
     return (
-      <div className="app-page space-y-8" aria-busy="true">
-        <PageHeader
-          className="app-page-header"
-          title="Application policy"
-          description="Loading feature overrides…"
-        />
-        <SkeletonTable rows={6} columns={4} />
+      <div className="app-page" aria-busy="true">
+        <SkeletonTable rows={6} columns={3} />
       </div>
     );
   }
-
   if (error || !app) {
     return (
-      <div className="app-page space-y-8">
-        <PageHeader
-          className="app-page-header"
-          title="Application unavailable"
-          description="Feature policy could not be displayed."
-        />
+      <div className="app-page">
         <ErrorState
           title="Application unavailable"
-          description={error || 'This application could not be found.'}
+          description={error || 'Application not found.'}
           onRetry={() => void loadData()}
         />
       </div>
@@ -321,36 +349,25 @@ export default function ApplicationDetailPage() {
   return (
     <div className="app-page space-y-8">
       <PageHeader
-        className="app-page-header [&_h1]:font-medium"
-        title={app.name}
-        description={`Application identity and legacy feature overrides · ${app.slug}`}
         actions={
           <div className="flex flex-wrap gap-3">
             <Button as="a" href="/applications" size="sm" variant="ghost">
               <ArrowLeft size={14} /> Applications
             </Button>
             <Button as="a" href="/governance" size="sm" variant="secondary">
-              <ShieldCheck size={14} /> RBAC governance
-            </Button>
-            <Button
-              onClick={() =>
-                downloadJson('sample-features.json', [SAMPLE_FEATURE])
-              }
-              size="sm"
-              variant="secondary"
-            >
-              <Download size={14} /> Sample
+              <ShieldCheck size={14} /> Role mappings
             </Button>
             <Button
               onClick={() =>
                 downloadJson(
-                  `${app.slug || 'application'}-features.json`,
-                  features.map(
-                    ({ name, slug, default_value, description }) => ({
-                      name,
-                      slug,
-                      default_value,
-                      description,
+                  `${app.slug}-permissions.json`,
+                  permissions.map(
+                    ({
+                      key: permissionKey,
+                      description: permissionDescription,
+                    }) => ({
+                      key: permissionKey,
+                      description: permissionDescription,
                     }),
                   ),
                 )
@@ -358,29 +375,25 @@ export default function ApplicationDetailPage() {
               size="sm"
               variant="secondary"
             >
-              <Download size={14} /> Export
+              <Download size={14} /> Export JSON
             </Button>
           </div>
         }
+        className="app-page-header [&_h1]:font-medium"
+        title={app.name}
+        description={`Cognito application and permission catalog · ${app.slug}`}
       />
 
       {superAdmin && (
-        <div className="space-y-5">
+        <div className="grid gap-5 xl:grid-cols-2">
           <Card padding="lg" variant="outlined">
-            <p className="app-section-label text-desert">
-              Authentication boundary
+            <p className="app-section-label text-desert">Authentication</p>
+            <h2 className="mt-2 text-xl font-medium">Cognito registration</h2>
+            <p className="app-secondary-copy mt-2 text-sm text-text-secondary">
+              This application owns its login flow. Pompeii verifies its ID
+              tokens during gRPC authorization.
             </p>
-            <h2 className="mt-2 text-xl font-medium">Cognito application</h2>
-            <p className="app-secondary-copy mt-2 text-sm leading-6 text-text-secondary">
-              Only signed ID tokens whose issuer matches this user pool and
-              whose audience matches this app-client ID are accepted. Login
-              handoffs are limited to the registered web origins and native
-              schemes.
-            </p>
-            <form
-              className="mt-5 grid gap-4 sm:grid-cols-2 sm:items-end"
-              onSubmit={saveApplication}
-            >
+            <form className="mt-5 space-y-4" onSubmit={saveApplication}>
               <Field label="Cognito user-pool ID" required>
                 <Input
                   required
@@ -395,86 +408,67 @@ export default function ApplicationDetailPage() {
                   onChange={(event) => setClientId(event.target.value)}
                 />
               </Field>
-              <Field
-                label="Login redirect origins"
-                description="Comma-separated web origins, including scheme and port."
-              >
-                <Input
-                  placeholder="https://app.example, http://localhost:5173"
-                  value={redirectOrigins}
-                  onChange={(event) => setRedirectOrigins(event.target.value)}
-                />
-              </Field>
-              <Field
-                label="Native redirect schemes"
-                description="Comma-separated custom schemes without a colon."
-              >
-                <Input
-                  placeholder="celesti"
-                  value={redirectSchemes}
-                  onChange={(event) => setRedirectSchemes(event.target.value)}
-                />
-              </Field>
               <Button
-                className="sm:col-span-2"
-                disabled={
-                  !userPoolId.trim() || !clientId.trim() || savingApplication
-                }
-                loading={savingApplication}
+                disabled={saving || !userPoolId.trim() || !clientId.trim()}
+                loading={saving}
                 type="submit"
               >
-                Save application configuration
+                Save authentication
               </Button>
             </form>
           </Card>
 
-          <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
-            <Card padding="lg" variant="outlined">
-              <p className="app-section-label text-desert">Feature policy</p>
-              <h2 className="mt-2 text-xl font-medium">Register feature override</h2>
-              <form
-                className="mt-5 grid gap-4 sm:grid-cols-[1fr_12rem_auto] sm:items-end"
-                onSubmit={createFeature}
-              >
-                <Field label="Feature name" required>
-                  <Input
-                    placeholder="Account access"
-                    required
-                    value={featureName}
-                    onChange={(event) => setFeatureName(event.target.value)}
-                  />
-                </Field>
-                <Field label="Global default" required>
-                  <Select
-                    aria-label="Global default"
-                    onChange={setFeatureDefault}
-                    options={LEVEL_OPTIONS}
-                    value={featureDefault}
-                  />
-                </Field>
-                <Button
-                  disabled={!featureName.trim() || savingFeature}
-                  loading={savingFeature}
-                  type="submit"
-                >
-                  <Plus size={15} /> Register
-                </Button>
-              </form>
-            </Card>
-
-            <Card padding="lg" variant="subtle">
-              <div className="flex items-center gap-2 text-desert">
-                <Upload size={15} />
-                <p className="app-section-label text-inherit">Bulk import</p>
-              </div>
-              <h2 className="mt-2 text-xl font-medium">Import JSON</h2>
-              <p className="app-secondary-copy mt-2 text-sm leading-6 text-text-secondary">
-                Validate a feature manifest and add it to this application.
-              </p>
+          <Card padding="lg" variant="outlined">
+            <p className="app-section-label text-desert">Permission catalog</p>
+            <h2 className="mt-2 text-xl font-medium">Register permission</h2>
+            <form className="mt-5 space-y-4" onSubmit={registerOne}>
               <Field
-                className="mt-5"
-                label="Feature manifest"
-                description="JSON files only. Import validates the complete file before submitting."
+                label="Permission key"
+                description={`Must start with ${app.slug}:`}
+                required
+              >
+                <Input
+                  placeholder={`${app.slug}:resource:read`}
+                  required
+                  value={key}
+                  onChange={(event) => setKey(event.target.value)}
+                />
+              </Field>
+              <Field label="Description">
+                <Input
+                  placeholder="Read application resources"
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                />
+              </Field>
+              <Button
+                disabled={saving || !key.trim()}
+                loading={saving}
+                type="submit"
+              >
+                <Plus size={15} /> Register permission
+              </Button>
+            </form>
+          </Card>
+
+          <Card className="xl:col-span-2" padding="lg" variant="subtle">
+            <div className="flex items-center gap-2 text-desert">
+              <Upload size={15} />
+              <p className="app-section-label text-inherit">
+                Bulk registration
+              </p>
+            </div>
+            <h2 className="mt-2 text-xl font-medium">Import JSON or CSV</h2>
+            <p className="app-secondary-copy mt-2 text-sm text-text-secondary">
+              JSON accepts an array of <code>{'{ key, description }'}</code>.
+              CSV requires a <code>key</code> header and accepts an optional{' '}
+              <code>description</code> column. The complete manifest is
+              validated before any rows are written.
+            </p>
+            <div className="mt-5 flex flex-wrap items-end gap-3">
+              <Field
+                className="min-w-72 flex-1"
+                label="Permission manifest"
                 error={
                   importErrors.length
                     ? 'Resolve the validation issues below.'
@@ -482,42 +476,42 @@ export default function ApplicationDetailPage() {
                 }
               >
                 <FileInput
-                  accept="application/json,.json"
-                  aria-label="Feature manifest"
+                  accept="application/json,text/csv,.json,.csv"
+                  aria-label="Permission manifest"
                   disabled={importing}
-                  onChange={handleFileChange}
+                  onChange={importManifest}
                 />
               </Field>
-              {importing && (
-                <p
-                  className="app-secondary-copy mt-3 text-sm text-text-secondary"
-                  role="status"
-                >
-                  Importing feature overrides…
-                </p>
-              )}
-            </Card>
-          </div>
+              <Button
+                onClick={() =>
+                  downloadJson(`${app.slug}-permissions.sample.json`, [
+                    {
+                      key: `${app.slug}:resource:read`,
+                      description: 'Read resources',
+                    },
+                    {
+                      key: `${app.slug}:resource:write`,
+                      description: 'Manage resources',
+                    },
+                  ])
+                }
+                variant="secondary"
+              >
+                <Download size={14} /> JSON sample
+              </Button>
+            </div>
+            {importErrors.length > 0 && (
+              <ul
+                className="mt-4 list-disc space-y-1 pl-5 text-sm text-terracotta"
+                role="alert"
+              >
+                {importErrors.map((message) => (
+                  <li key={message}>{message}</li>
+                ))}
+              </ul>
+            )}
+          </Card>
         </div>
-      )}
-
-      {importErrors.length > 0 && (
-        <Card
-          className="border-terracotta/25 bg-terracotta/[0.045]"
-          padding="md"
-          variant="outlined"
-        >
-          <div role="alert" aria-live="assertive">
-            <p className="font-medium text-terracotta">
-              Import needs attention
-            </p>
-            <ul className="app-secondary-copy mt-2 list-disc space-y-1 pl-5 text-sm text-text-secondary">
-              {importErrors.map((message) => (
-                <li key={message}>{message}</li>
-              ))}
-            </ul>
-          </div>
-        </Card>
       )}
 
       <section
@@ -526,38 +520,40 @@ export default function ApplicationDetailPage() {
       >
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="app-section-label text-desert">Feature override registry</p>
+            <p className="app-section-label text-desert">Registered contract</p>
             <h2
               id="permission-directory-title"
               className="mt-2 text-xl font-medium"
             >
-              {filteredFeatures.length}{' '}
-              {filteredFeatures.length === 1 ? 'feature override' : 'feature overrides'}
+              {filteredPermissions.length}{' '}
+              {filteredPermissions.length === 1 ? 'permission' : 'permissions'}
             </h2>
           </div>
           <SearchInput
-            aria-label="Search feature overrides"
+            aria-label="Search permissions"
             className="w-full sm:w-72"
             onChange={(event) => setSearch(event.target.value)}
             onClear={() => setSearch('')}
-            placeholder="Search feature or key"
+            placeholder="Search permission or description"
             value={search}
           />
         </div>
-        {filteredFeatures.length ? (
+        {filteredPermissions.length ? (
           <DataTable
-            caption={`Feature overrides for ${app.name}`}
+            caption={`Permissions registered for ${app.name}`}
             columns={columns}
-            data={filteredFeatures}
-            getRowKey={(feature) => String(feature.id)}
+            data={filteredPermissions}
+            getRowKey={(permission) => String(permission.id)}
           />
         ) : (
           <Empty
-            title={search ? 'No matching feature overrides' : 'No feature overrides found'}
+            title={
+              search ? 'No matching permissions' : 'No permissions registered'
+            }
             description={
               search
                 ? 'Clear or refine your search.'
-                : 'No legacy feature overrides are configured. RBAC permissions and role mappings are managed in Governance.'
+                : 'An administrator must register this application’s permission contract before its backend can receive allowed gRPC decisions.'
             }
             action={
               search ? (
@@ -569,6 +565,21 @@ export default function ApplicationDetailPage() {
           />
         )}
       </section>
+
+      <AlertDialog
+        confirmLabel="Remove permission"
+        confirmLoading={saving}
+        description={
+          pendingRemoval
+            ? `${pendingRemoval.key} will be removed from this application and every role mapping that references it.`
+            : ''
+        }
+        isOpen={Boolean(pendingRemoval)}
+        onCancel={() => setPendingRemoval(null)}
+        onConfirm={() => void removePermission()}
+        title="Remove registered permission?"
+        variant="destructive"
+      />
     </div>
   );
 }

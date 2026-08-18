@@ -1,4 +1,5 @@
 import { RbacService } from './rbac.service';
+import { ConflictException } from '@nestjs/common';
 
 describe('RbacService', () => {
   const makeService = (
@@ -121,5 +122,21 @@ describe('RbacService', () => {
     await expect(
       service.listAuthorizedTeamIds(7, 'team:read'),
     ).resolves.toEqual([4, 9]);
+  });
+
+  it('rejects a role-permission mapping across applications', async () => {
+    const rolePermissions = { findOrCreate: jest.fn() };
+    const service = new RbacService(
+      {} as any,
+      { findByPk: jest.fn().mockResolvedValue({ application_id: 2 }) } as any,
+      { findByPk: jest.fn().mockResolvedValue({ application_id: 3 }) } as any,
+      rolePermissions as any,
+      {} as any,
+    );
+
+    await expect(service.addPermissionToRole(10, 20)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(rolePermissions.findOrCreate).not.toHaveBeenCalled();
   });
 });

@@ -13,6 +13,8 @@ import {
   Table,
 } from 'sequelize-typescript';
 import { Feature } from './feature.model';
+import { RbacPermission } from './rbac-permission.model';
+import { RbacRole } from './rbac-role.model';
 import { Team } from './team.model';
 
 @Table({
@@ -70,23 +72,15 @@ export class Application extends Model<
   })
   cognito_client_id?: string;
 
-  @Column({
-    type: DataType.ARRAY(DataType.TEXT),
-    allowNull: false,
-    defaultValue: [],
-  })
-  login_redirect_origins!: CreationOptional<string[]>;
-
-  @Column({
-    type: DataType.ARRAY(DataType.TEXT),
-    allowNull: false,
-    defaultValue: [],
-  })
-  login_redirect_schemes!: CreationOptional<string[]>;
-
   @BelongsTo(() => Team)
   team?: Team;
 
   @HasMany(() => Feature)
   features?: Feature[];
+
+  @HasMany(() => RbacPermission)
+  rbacPermissions?: RbacPermission[];
+
+  @HasMany(() => RbacRole)
+  rbacRoles?: RbacRole[];
 }

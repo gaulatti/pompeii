@@ -28,11 +28,12 @@ for databases whose connection URL does not request it.
 - Cognito user-pool and app-client IDs are managed on database `applications`
   records. The app-client ID is unique. REST and gRPC tokens are rejected unless
   their issuer and `aud` claim match the registered pair.
-- Web login origins and native callback schemes are stored on the same
-  application record. `POST /authorization/login/resolve` is public, but it
-  returns a handoff URL only when the requested destination matches one of
-  those database-backed lists.
 - ID tokens (`token_use=id`) are enforced
+
+Each application owns its Cognito registration, roles, and permission catalog.
+Roles can only map permissions from the same application. Client applications
+own their login flow and send their end-user ID token to their backend; that
+backend asks Pompeii for an authorization decision over gRPC.
 
 There is no backend Cognito environment variable or Secrets Manager field.
 The deployment workflow passes the existing public frontend Cognito variables

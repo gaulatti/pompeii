@@ -11,9 +11,6 @@ module.exports = {
   async up(queryInterface) {
     const userPoolId = requiredEnvironment('POMPEII_COGNITO_USER_POOL_ID');
     const clientId = requiredEnvironment('POMPEII_COGNITO_CLIENT_ID');
-    const redirectOrigin = requiredEnvironment(
-      'POMPEII_LOGIN_REDIRECT_ORIGIN',
-    );
 
     await queryInterface.sequelize.transaction(async (transaction) => {
       const [teams] = await queryInterface.sequelize.query(
@@ -33,12 +30,10 @@ module.exports = {
         `
           INSERT INTO applications (
             team_id, name, slug, description, cognito_user_pool_id,
-            cognito_client_id, login_redirect_origins,
-            login_redirect_schemes, created_at, updated_at
+            cognito_client_id, created_at, updated_at
           ) VALUES (
             :teamId, 'Pompeii', 'pompeii',
             'Pompeii authorization control center', :userPoolId, :clientId,
-            ARRAY[:redirectOrigin]::text[], ARRAY[]::text[],
             CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
           )
           ON CONFLICT (slug) DO UPDATE SET
@@ -47,12 +42,10 @@ module.exports = {
             description = EXCLUDED.description,
             cognito_user_pool_id = EXCLUDED.cognito_user_pool_id,
             cognito_client_id = EXCLUDED.cognito_client_id,
-            login_redirect_origins = EXCLUDED.login_redirect_origins,
-            login_redirect_schemes = EXCLUDED.login_redirect_schemes,
             updated_at = CURRENT_TIMESTAMP
         `,
         {
-          replacements: { teamId, userPoolId, clientId, redirectOrigin },
+          replacements: { teamId, userPoolId, clientId },
           transaction,
         },
       );

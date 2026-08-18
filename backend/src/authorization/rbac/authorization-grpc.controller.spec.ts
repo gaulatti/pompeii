@@ -21,6 +21,7 @@ describe('AuthorizationGrpcController', () => {
 
   it('evaluates global and requested team scope for a provisioned user', async () => {
     const rbac = {
+      permissionBelongsToApplication: jest.fn().mockResolvedValue(true),
       authorizeUser: jest.fn().mockResolvedValue({
         allowed: true,
         reason: 'ALLOW',
@@ -30,7 +31,10 @@ describe('AuthorizationGrpcController', () => {
     };
     const controller = new AuthorizationGrpcController(
       {
-        verifyBearerToken: jest.fn().mockResolvedValue({ sub: 'subject-1' }),
+        verifyBearerToken: jest.fn().mockResolvedValue({
+          sub: 'subject-1',
+          pompeii_application_id: 3,
+        }),
       } as any,
       {
         resolveAuthorizationUser: jest.fn().mockResolvedValue({ id: 42 }),
@@ -57,6 +61,7 @@ describe('AuthorizationGrpcController', () => {
       resolveAuthorizationUser: jest.fn().mockResolvedValue({ id: 51 }),
     };
     const rbac = {
+      permissionBelongsToApplication: jest.fn().mockResolvedValue(true),
       authorizeUser: jest.fn().mockResolvedValue({
         allowed: false,
         reason: 'DENY_NO_PERMISSION',
@@ -70,6 +75,7 @@ describe('AuthorizationGrpcController', () => {
       email_verified: true,
       given_name: 'First',
       family_name: 'Use',
+      pompeii_application_id: 4,
     };
     const controller = new AuthorizationGrpcController(
       { verifyBearerToken: jest.fn().mockResolvedValue(identity) } as any,
@@ -94,5 +100,40 @@ describe('AuthorizationGrpcController', () => {
       'angelina:poll:read',
       null,
     );
+  });
+
+  it('denies a permission that is not registered to the token application', async () => {
+    const rbac = {
+      permissionBelongsToApplication: jest.fn().mockResolvedValue(false),
+      authorizeUser: jest.fn(),
+    };
+    const controller = new AuthorizationGrpcController(
+      {
+        verifyBearerToken: jest.fn().mockResolvedValue({
+          sub: 'subject-1',
+          pompeii_application_id: 9,
+        }),
+      } as any,
+      {
+        resolveAuthorizationUser: jest.fn().mockResolvedValue({ id: 42 }),
+      } as any,
+      rbac as any,
+    );
+
+    await expect(
+      controller.authorize({
+        bearer_token: 'token',
+        permission: 'another-app:admin',
+      }),
+    ).resolves.toMatchObject({
+      authenticated: true,
+      allowed: false,
+      reason: 'DENY_UNREGISTERED_APPLICATION_PERMISSION',
+    });
+    expect(rbac.permissionBelongsToApplication).toHaveBeenCalledWith(
+      9,
+      'another-app:admin',
+    );
+    expect(rbac.authorizeUser).not.toHaveBeenCalled();
   });
 });

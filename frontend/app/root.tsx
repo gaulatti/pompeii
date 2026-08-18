@@ -20,8 +20,6 @@ import {
 import type { Route } from './+types/root';
 import './app.css';
 import { getStore } from './state';
-import { resolveReturnTo, takeReturnTo } from './auth/return-to';
-import { useAuthStatus } from './hooks/useAuth';
 
 /**
  * This is important. It enables the OAuth listener for the Auth module.
@@ -88,33 +86,6 @@ function ClientSonner(): JSX.Element | null {
   return mounted ? <Sonner position="bottom-right" /> : null;
 }
 
-function LoginReturnBridge(): null {
-  const { isAuthenticated, isLoaded } = useAuthStatus();
-
-  useEffect(() => {
-    if (!isLoaded || !isAuthenticated) return;
-    const requestedReturnTo = new URLSearchParams(window.location.search).get(
-      'returnTo',
-    );
-    const storedReturnTo = takeReturnTo();
-    const returnTo = requestedReturnTo ?? storedReturnTo;
-    let cancelled = false;
-    void resolveReturnTo(returnTo).then((redirectTo) => {
-      if (cancelled) return;
-      if (redirectTo) {
-        window.location.replace(redirectTo);
-      } else if (window.location.pathname === '/login') {
-        window.location.replace('/');
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [isAuthenticated, isLoaded]);
-
-  return null;
-}
-
 /**
  * Layout component that sets up the HTML structure and provides theming and state management.
  *
@@ -150,7 +121,6 @@ export function Layout({
       <body className="min-h-full antialiased">
         <Provider store={store}>
           <AppThemeProvider>
-            <LoginReturnBridge />
             {children}
             <ClientSonner />
             <ScrollRestoration />

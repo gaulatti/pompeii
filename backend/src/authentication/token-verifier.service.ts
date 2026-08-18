@@ -4,11 +4,7 @@ import { decode, JwtPayload, verify } from 'jsonwebtoken';
 import { JwksClient } from 'jwks-rsa';
 import { Application } from 'src/models/application.model';
 import { tokenAudience } from './token-audience';
-import {
-  TEST_AUTH_ISSUER,
-  testAuthEnabled,
-  testAuthSecret,
-} from './test-auth';
+import { TEST_AUTH_ISSUER, testAuthEnabled, testAuthSecret } from './test-auth';
 
 @Injectable()
 export class TokenVerifierService {
@@ -19,9 +15,13 @@ export class TokenVerifierService {
     private readonly applications: typeof Application,
   ) {}
 
-  async verifyBearerToken(
-    bearerToken: string,
-  ): Promise<JwtPayload & { sub: string; email: string }> {
+  async verifyBearerToken(bearerToken: string): Promise<
+    JwtPayload & {
+      sub: string;
+      email: string;
+      pompeii_application_id: number;
+    }
+  > {
     const token = bearerToken.toLowerCase().startsWith('bearer ')
       ? bearerToken.slice(7).trim()
       : bearerToken.trim();
@@ -40,7 +40,20 @@ export class TokenVerifierService {
           typeof payload.email === 'string' &&
           payload.email
         ) {
-          return payload as JwtPayload & { sub: string; email: string };
+          const application = await this.registeredApplication(payload);
+          if (!application) {
+            throw new UnauthorizedException(
+              'Token audience is not a registered Cognito application',
+            );
+          }
+          return {
+            ...payload,
+            pompeii_application_id: application.id,
+          } as JwtPayload & {
+            sub: string;
+            email: string;
+            pompeii_application_id: number;
+          };
         }
       } catch {
         // A test-mode server still accepts normal Cognito tokens below.
@@ -92,12 +105,14 @@ export class TokenVerifierService {
             );
             return;
           }
-          resolve(
-            decodedPayload as JwtPayload & {
-              sub: string;
-              email: string;
-            },
-          );
+          resolve({
+            ...decodedPayload,
+            pompeii_application_id: application.id,
+          } as JwtPayload & {
+            sub: string;
+            email: string;
+            pompeii_application_id: number;
+          });
         },
       );
     });

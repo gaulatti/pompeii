@@ -7,6 +7,7 @@ import {
 import { InjectModel } from '@nestjs/sequelize';
 import { Op } from 'sequelize';
 import { RbacPermission } from 'src/models/rbac-permission.model';
+import { Application } from 'src/models/application.model';
 import { RbacRole } from 'src/models/rbac-role.model';
 import { RoleAssignment } from 'src/models/role-assignment.model';
 import { RolePermission } from 'src/models/role-permission.model';
@@ -124,14 +125,20 @@ export class RbacService {
     }
   }
 
-  listRoles() {
+  listRoles(applicationId?: number) {
     return this.roles.findAll({
-      include: [RbacPermission],
+      where: applicationId ? { application_id: applicationId } : undefined,
+      include: [RbacPermission, Application],
       order: [['name', 'ASC']],
     });
   }
 
-  createRole(input: { key: string; name: string; description?: string }) {
+  createRole(input: {
+    application_id: number;
+    key: string;
+    name: string;
+    description?: string;
+  }) {
     return this.roles.create({ ...input, is_system: false });
   }
 
@@ -155,18 +162,85 @@ export class RbacService {
     this.clearCache();
   }
 
-  listPermissions() {
-    return this.permissions.findAll({ order: [['key', 'ASC']] });
+  listPermissions(applicationId?: number) {
+    return this.permissions.findAll({
+      where: applicationId ? { application_id: applicationId } : undefined,
+      include: [Application],
+      order: [['key', 'ASC']],
+    });
   }
 
-  createPermission(input: { key: string; description?: string }) {
+  createPermission(input: {
+    application_id: number;
+    key: string;
+    description?: string;
+  }) {
     return this.permissions.create(input);
+  }
+
+  async bulkCreatePermissions(
+    applicationId: number,
+    permissions: Array<{ key: string; description?: string }>,
+  ) {
+    const keys = permissions.map((permission) => permission.key);
+    const existing = await this.permissions.findOne({
+      where: { key: { [Op.in]: keys } },
+    });
+    if (existing) {
+      throw new ConflictException(
+        `Permission key already exists: ${existing.key}`,
+      );
+    }
+    const created = await this.permissions.bulkCreate(
+      permissions.map((permission) => ({
+        ...permission,
+        application_id: applicationId,
+      })),
+      { validate: true },
+    );
+    this.clearCache();
+    return created;
+  }
+
+  async removeApplicationPermission(
+    applicationId: number,
+    permissionId: number,
+  ): Promise<void> {
+    const permission = await this.permissions.findOne({
+      where: { id: permissionId, application_id: applicationId },
+    });
+    if (!permission) throw new NotFoundException('Permission not found');
+    await permission.destroy();
+    this.clearCache();
+  }
+
+  async permissionBelongsToApplication(
+    applicationId: number,
+    key: string,
+  ): Promise<boolean> {
+    return Boolean(
+      await this.permissions.findOne({
+        attributes: ['id'],
+        where: { application_id: applicationId, key },
+      }),
+    );
   }
 
   async addPermissionToRole(
     roleId: number,
     permissionId: number,
   ): Promise<void> {
+    const [role, permission] = await Promise.all([
+      this.roles.findByPk(roleId),
+      this.permissions.findByPk(permissionId),
+    ]);
+    if (!role) throw new NotFoundException('Role not found');
+    if (!permission) throw new NotFoundException('Permission not found');
+    if (role.application_id !== permission.application_id) {
+      throw new ConflictException(
+        'Role and permission must belong to the same application',
+      );
+    }
     await this.rolePermissions.findOrCreate({
       where: { role_id: roleId, permission_id: permissionId },
     });

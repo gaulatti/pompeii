@@ -26,15 +26,23 @@ export class RbacAdminController {
 
   @Get('roles')
   @RequiresPermission('role:read')
-  listRoles() {
-    return this.rbac.listRoles();
+  listRoles(@Query('applicationId') applicationId?: string) {
+    return this.rbac.listRoles(
+      applicationId ? Number(applicationId) : undefined,
+    );
   }
 
   @Post('roles')
   @RequiresPermission('role:write')
   async createRole(
     @Req() req: any,
-    @Body() body: { key: string; name: string; description?: string },
+    @Body()
+    body: {
+      application_id: number;
+      key: string;
+      name: string;
+      description?: string;
+    },
   ) {
     const role = await this.rbac.createRole(body);
     await this.audit.record({
@@ -80,25 +88,10 @@ export class RbacAdminController {
 
   @Get('rbac-permissions')
   @RequiresPermission('role:read')
-  listPermissions() {
-    return this.rbac.listPermissions();
-  }
-
-  @Post('rbac-permissions')
-  @RequiresPermission('role:write')
-  async createPermission(
-    @Req() req: any,
-    @Body() body: { key: string; description?: string },
-  ) {
-    const permission = await this.rbac.createPermission(body);
-    await this.audit.record({
-      actorUserId: req.user.id,
-      action: 'permission.create',
-      targetType: 'rbac-permission',
-      targetId: String(permission.id),
-      metadata: body,
-    });
-    return permission;
+  listPermissions(@Query('applicationId') applicationId?: string) {
+    return this.rbac.listPermissions(
+      applicationId ? Number(applicationId) : undefined,
+    );
   }
 
   @Put('roles/:roleId/permissions/:permissionId')

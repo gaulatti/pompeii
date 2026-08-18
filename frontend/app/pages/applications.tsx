@@ -29,8 +29,6 @@ type Application = {
   team_id: number;
   cognito_user_pool_id?: string;
   cognito_client_id?: string;
-  login_redirect_origins: string[];
-  login_redirect_schemes: string[];
 };
 type Team = { id: number; name: string };
 
@@ -46,8 +44,6 @@ export default function ApplicationsPage() {
   const [appName, setAppName] = useState('');
   const [appUserPoolId, setAppUserPoolId] = useState('');
   const [appClientId, setAppClientId] = useState('');
-  const [appRedirectOrigins, setAppRedirectOrigins] = useState('');
-  const [appRedirectSchemes, setAppRedirectSchemes] = useState('');
   const [appTeamId, setAppTeamId] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -110,21 +106,11 @@ export default function ApplicationsPage() {
         name: appName.trim(),
         cognito_user_pool_id: appUserPoolId.trim(),
         cognito_client_id: appClientId.trim(),
-        login_redirect_origins: appRedirectOrigins
-          .split(',')
-          .map((value) => value.trim())
-          .filter(Boolean),
-        login_redirect_schemes: appRedirectSchemes
-          .split(',')
-          .map((value) => value.trim())
-          .filter(Boolean),
         team_id: Number(appTeamId),
       });
       setAppName('');
       setAppUserPoolId('');
       setAppClientId('');
-      setAppRedirectOrigins('');
-      setAppRedirectSchemes('');
       await loadData();
       toast.success('Application registered');
     } catch {
@@ -219,8 +205,8 @@ export default function ApplicationsPage() {
         title="Applications"
         description={
           currentTeam
-            ? `Feature policy and overrides for ${currentTeam.name}.`
-            : 'Registered applications and their feature policy.'
+            ? `Authentication clients and permission catalogs for ${currentTeam.name}.`
+            : 'Registered Cognito applications and their permission catalogs.'
         }
       />
 
@@ -234,8 +220,8 @@ export default function ApplicationsPage() {
             <p className="app-section-label text-desert">Registry</p>
             <h2 className="mt-2 text-xl font-medium">Register application</h2>
             <p className="app-secondary-copy mt-2 text-sm leading-6 text-text-secondary">
-              Create an application boundary before adding feature-level
-              permissions.
+              Register the Cognito application before importing its permission
+              contract.
             </p>
           </div>
           <form
@@ -283,28 +269,6 @@ export default function ApplicationsPage() {
                 onChange={(event) => setAppClientId(event.target.value)}
               />
             </Field>
-            <Field
-              className="sm:col-span-2"
-              label="Login redirect origins"
-              description="Comma-separated web origins, including scheme and port."
-            >
-              <Input
-                placeholder="https://app.example, http://localhost:5173"
-                value={appRedirectOrigins}
-                onChange={(event) => setAppRedirectOrigins(event.target.value)}
-              />
-            </Field>
-            <Field
-              className="sm:col-span-2"
-              label="Native redirect schemes"
-              description="Comma-separated custom schemes without a colon."
-            >
-              <Input
-                placeholder="celesti"
-                value={appRedirectSchemes}
-                onChange={(event) => setAppRedirectSchemes(event.target.value)}
-              />
-            </Field>
             <Button
               className="sm:col-span-2"
               disabled={
@@ -329,7 +293,9 @@ export default function ApplicationsPage() {
       >
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="app-section-label text-desert">Feature policy</p>
+            <p className="app-section-label text-desert">
+              Application registry
+            </p>
             <h2
               id="application-directory-title"
               className="mt-2 text-xl font-medium"

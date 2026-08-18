@@ -6,7 +6,7 @@ Centralized authn + authz + feature flag management plane.
 
 - **Backend** — NestJS administration REST API plus private gRPC authorization API
 - **Frontend** — React Router app (Vite dev server)
-- **Auth** — AWS Cognito (same pool as alcantara)
+- **Auth** — AWS Cognito application registrations
 - **Infrastructure** — standalone AWS CDK package owned by this repository
 - **Deploy** — Backend via Docker → GHCR → on-prem SSH; Frontend via npm build → S3 → CloudFront
 
@@ -42,9 +42,9 @@ Repository secrets required by the backend workflow are `DEPLOYMENT_TOKEN`,
 `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `SECRET_ARN`, and `UNIQUE_KEY`.
 Backend runtime variables are only deployment coordinates: `HTTP_PORT`,
 `GRPC_PORT`, `AWS_REGION`, and `LOGS_GROUP`. The deployment also reuses the
-public frontend variables `VITE_COGNITO_USER_POOL_ID`,
-`VITE_COGNITO_CLIENT_ID`, and `VITE_FQDN` as inputs to a one-shot database
-migration container. They are not retained in the long-running backend.
+public frontend variables `VITE_COGNITO_USER_POOL_ID` and
+`VITE_COGNITO_CLIENT_ID` as inputs to a one-shot database migration container.
+They are not retained in the long-running backend.
 
 `SECRET_ARN` identifies the Secrets Manager entry and `UNIQUE_KEY` selects the
 Pompeii object inside it. That object contains only `DATABASE_URL` and
@@ -68,8 +68,8 @@ Example Secrets Manager shape (values are illustrative):
 The frontend workflow requires AWS credential secrets and the repository
 variables `AWS_REGION`, `BUCKET_NAME`, `DISTRIBUTION_ID`, `VITE_API_FQDN`,
 `VITE_FQDN`, `VITE_COGNITO_USER_POOL_ID`, `VITE_COGNITO_CLIENT_ID`, and
-`VITE_USER_POOL_DOMAIN`. Client login redirects are application registry data,
-not build configuration.
+`VITE_USER_POOL_DOMAIN`. Each client owns its own Cognito callback and login
+configuration.
 
 ## Dev Setup
 
@@ -104,7 +104,7 @@ Compose does not consume that file. Production receives `DATABASE_URL` and
 
 The local frontend file contains exactly three public values:
 `VITE_COGNITO_USER_POOL_ID`, `VITE_COGNITO_CLIENT_ID`, and
-`VITE_USER_POOL_DOMAIN`. Local API URLs, ports, redirect origins, PostgreSQL,
+`VITE_USER_POOL_DOMAIN`. Local API URLs, ports, PostgreSQL,
 cache limits, and backend mode are defaults or Compose-owned values and do not
 belong in that file.
 
@@ -127,18 +127,21 @@ authenticated administration surface and does not expose an authorization
 decision endpoint. The versioned contract is at
 `backend/src/proto/authorization.proto`.
 
-RBAC permissions are separate from application feature overrides. Roles may be
-assigned globally or to a team; a team-scoped decision evaluates both its team
-assignments and global assignments. Decisions are denied by default and cached
-briefly.
+RBAC roles and permissions belong to an application. A database constraint
+prevents a role from mapping a permission owned by another application. Roles
+may be assigned globally or to a team; a team-scoped decision evaluates both
+its team assignments and global assignments. Decisions are denied by default
+and cached briefly.
 
 Verified identities presented by client services are registered in Pompeii on
 their first authorization request. Registration grants no permissions: an
-administrator must assign an Auburndale, Angelina, Alcantara, Celesti, or custom
-role in Governance before the client request is allowed.
+administrator must register the application catalog and assign one of its roles
+in Governance before the client request is allowed.
 
-The client application permission catalog and its default viewer/operator/admin
-roles are installed by `20260812210000-add-client-application-permissions.js`.
+Client application permission catalogs and roles are registered by an
+administrator from the Applications and Governance screens. Catalogs can be
+entered individually or imported as JSON or CSV. Pompeii never hardcodes
+external service permissions or roles.
 Client services send their namespaced permission key and the end-user Cognito ID
 token to the gRPC `Authorize` method; they fail closed when Pompeii denies or is
 unavailable.
@@ -155,24 +158,10 @@ self-registration migration supplies Pompeii's own values during deployment;
 other client applications are registered through the protected administration
 surface. An unconfigured application is deliberately denied.
 
-Each client application also owns `login_redirect_origins` and
-`login_redirect_schemes`. Web entries are normalized origins such as
-`https://angelina.example`; native entries are custom schemes such as
-`celesti`. Both lists are stored in PostgreSQL and managed from the protected
-Applications screen. They are never frontend or deployment environment
-variables.
-
-## Centralized login
-
-Pompeii is the only user-facing login surface. Auburndale, Angelina, Alcantara,
-and Celesti redirect unauthenticated browsers to `/login?returnTo=...` on the
-Pompeii frontend. The backend validates the destination against the matching
-application's database-backed web origins or native schemes and returns the
-approved handoff URL. The frontend never decides which destinations are
-trusted. The client then performs a transparent app-client OAuth exchange
-against the existing Cognito SSO session; Cognito tokens never appear in the
-redirect URL. Each client origin must remain registered as a callback URL on
-its own Cognito app client.
+Each client application owns its login flow and Cognito callback configuration.
+After login, its frontend sends the ID token to its own backend. The backend
+forwards that token and a registered permission key to Pompeii over gRPC.
+Pompeii does not broker redirects or retain client redirect origins/schemes.
 
 ## Superadmin
 

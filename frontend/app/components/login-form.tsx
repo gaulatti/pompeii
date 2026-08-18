@@ -1,8 +1,6 @@
 import { LockKeyhole, LogIn } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
-import { useLocation } from 'react-router';
+import { useState } from 'react';
 import { signInWithRedirect } from 'aws-amplify/auth';
-import { rememberReturnTo } from '~/auth/return-to';
 import { useAuthStatus } from '~/hooks/useAuth';
 import { Button, Card, IconBadge, LoadingSpinner, toast } from '~/lib/bleecker';
 import { isTestAuth } from '~/auth/session';
@@ -10,24 +8,20 @@ import { isTestAuth } from '~/auth/session';
 export function LoginForm() {
   const { isAuthenticated, isLoaded } = useAuthStatus();
   const [signingIn, setSigningIn] = useState(false);
-  const location = useLocation();
-  const requestedReturnTo = useMemo(
-    () => new URLSearchParams(location.search).get('returnTo'),
-    [location.search],
-  );
 
   if (isTestAuth()) {
     return (
-      <div className="flex min-h-80 flex-col items-center justify-center gap-4" role="status">
+      <div
+        className="flex min-h-80 flex-col items-center justify-center gap-4"
+        role="status"
+      >
         <LoadingSpinner size="lg" />
-        <p className="app-secondary-copy text-sm text-text-secondary">Opening the local test session…</p>
+        <p className="app-secondary-copy text-sm text-text-secondary">
+          Opening the local test session…
+        </p>
       </div>
     );
   }
-
-  useEffect(() => {
-    if (requestedReturnTo) rememberReturnTo(requestedReturnTo);
-  }, [requestedReturnTo]);
 
   if (!isLoaded || isAuthenticated) {
     return (
@@ -47,7 +41,6 @@ export function LoginForm() {
   const signIn = async () => {
     setSigningIn(true);
     try {
-      rememberReturnTo(requestedReturnTo);
       await signInWithRedirect({ provider: 'Google' });
     } catch {
       setSigningIn(false);

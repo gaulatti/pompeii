@@ -76,21 +76,6 @@ export class AuthorizationController {
     };
   }
 
-  @Public()
-  @Post('login/resolve')
-  async resolveLoginRedirect(@Body() body: { returnTo?: string }) {
-    if (typeof body.returnTo !== 'string' || !body.returnTo.trim()) {
-      throw new BadRequestException('returnTo is required');
-    }
-    const redirectTo = await this.applicationsService.resolveLoginRedirect(
-      body.returnTo.trim(),
-    );
-    if (!redirectTo) {
-      throw new ForbiddenException('Login redirect is not registered');
-    }
-    return { redirect_to: redirectTo };
-  }
-
   @Get('teams')
   async listTeams(@Req() req: any) {
     const userId = Number(req.user?.id);
@@ -236,8 +221,6 @@ export class AuthorizationController {
       description?: string;
       cognito_user_pool_id: string;
       cognito_client_id: string;
-      login_redirect_origins?: string[];
-      login_redirect_schemes?: string[];
     },
   ) {
     body.cognito_user_pool_id = body.cognito_user_pool_id?.trim();
@@ -268,8 +251,6 @@ export class AuthorizationController {
       description?: string;
       cognito_user_pool_id?: string;
       cognito_client_id?: string;
-      login_redirect_origins?: string[];
-      login_redirect_schemes?: string[];
     },
   ) {
     const application = await this.applicationsService.getById(id);
@@ -300,6 +281,105 @@ export class AuthorizationController {
       metadata: body,
     });
     return updated;
+  }
+
+  @Get('applications/:id/rbac-permissions')
+  async listApplicationRbacPermissions(
+    @Req() req: any,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    const application = await this.applicationsService.getById(id);
+    if (!application) throw new NotFoundException('Application not found');
+    await this.rbacService.assertUserPermission(
+      req.user.id,
+      'application:read',
+      application.team_id,
+    );
+    return this.rbacService.listPermissions(id);
+  }
+
+  @Post('applications/:id/rbac-permissions')
+  async registerApplicationRbacPermissions(
+    @Req() req: any,
+    @Param('id', ParseIntPipe) id: number,
+    @Body()
+    body: {
+      permissions: Array<{ key: string; description?: string }>;
+    },
+  ) {
+    const application = await this.applicationsService.getById(id);
+    if (!application) throw new NotFoundException('Application not found');
+    await this.rbacService.assertUserPermission(
+      req.user.id,
+      'application:write',
+      application.team_id,
+    );
+    if (!Array.isArray(body.permissions) || body.permissions.length === 0) {
+      throw new BadRequestException('permissions must be a non-empty array');
+    }
+    if (body.permissions.length > 500) {
+      throw new BadRequestException('permission imports are limited to 500 rows');
+    }
+
+    const prefix = `${application.slug.toLowerCase()}:`;
+    const seen = new Set<string>();
+    const permissions = body.permissions.map((input, index) => {
+      const key = typeof input?.key === 'string' ? input.key.trim().toLowerCase() : '';
+      if (!key || !/^[a-z0-9][a-z0-9._-]*(?::[a-z0-9][a-z0-9._-]*)+$/.test(key)) {
+        throw new BadRequestException(`permissions[${index}].key is invalid`);
+      }
+      if (!key.startsWith(prefix)) {
+        throw new BadRequestException(
+          `permissions[${index}].key must start with ${prefix}`,
+        );
+      }
+      if (seen.has(key)) {
+        throw new BadRequestException(`Duplicate permission key: ${key}`);
+      }
+      seen.add(key);
+      const description =
+        typeof input.description === 'string' && input.description.trim()
+          ? input.description.trim()
+          : undefined;
+      return { key, description };
+    });
+
+    const created = await this.rbacService.bulkCreatePermissions(id, permissions);
+    await this.auditService.record({
+      actorUserId: req.user.id,
+      action: 'application.permission.import',
+      targetType: 'application',
+      targetId: String(id),
+      metadata: { count: created.length, keys: permissions.map(({ key }) => key) },
+    });
+    return created;
+  }
+
+  @Delete('applications/:applicationId/rbac-permissions/:permissionId')
+  async removeApplicationRbacPermission(
+    @Req() req: any,
+    @Param('applicationId', ParseIntPipe) applicationId: number,
+    @Param('permissionId', ParseIntPipe) permissionId: number,
+  ) {
+    const application = await this.applicationsService.getById(applicationId);
+    if (!application) throw new NotFoundException('Application not found');
+    await this.rbacService.assertUserPermission(
+      req.user.id,
+      'application:write',
+      application.team_id,
+    );
+    await this.rbacService.removeApplicationPermission(
+      applicationId,
+      permissionId,
+    );
+    await this.auditService.record({
+      actorUserId: req.user.id,
+      action: 'application.permission.delete',
+      targetType: 'rbac-permission',
+      targetId: String(permissionId),
+      metadata: { applicationId },
+    });
+    return { removed: true };
   }
 
   @Get('applications/:id/features')
