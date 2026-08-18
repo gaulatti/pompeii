@@ -56,7 +56,13 @@ export class AuthorizationController {
 
   @Get('users')
   @RequiresPermission('user:read', 'query.team_id')
-  async listUsers(@Query('team_id') teamId?: number) {
+  async listUsers(@Req() req: any, @Query('team_id') teamId?: number) {
+    const globalDecision = await this.rbacService.authorizeUser(
+      Number(req.user?.id),
+      'user:read',
+      null,
+    );
+    if (globalDecision.allowed) return this.usersService.listUsers();
     return this.usersService.listUsers(teamId ? Number(teamId) : undefined);
   }
 

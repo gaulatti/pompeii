@@ -4,10 +4,13 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
+import { Op } from 'sequelize';
 import { AccessLog } from 'src/models/access.log.model';
 import { Login } from 'src/models/login.model';
 import { Membership } from 'src/models/membership.model';
 import { Permission } from 'src/models/permission.model';
+import { RbacRole } from 'src/models/rbac-role.model';
+import { RoleAssignment } from 'src/models/role-assignment.model';
 import { Team } from 'src/models/team.model';
 import { User } from 'src/models/user.model';
 import { nanoid } from 'src/utils/nanoid';
@@ -36,16 +39,26 @@ export class UsersService {
    * @returns {Promise<User[]>} A promise that resolves to an array of all users.
    */
   async listUsers(teamId?: number): Promise<User[]> {
-    const include: any[] = [
-      {
-        model: Membership,
-        include: [Team],
-      },
-    ];
-    if (teamId) {
-      include[0].where = { teams_id: teamId };
-    }
-    return await this.user.findAll({ include });
+    return this.user.findAll({
+      include: [
+        {
+          model: RoleAssignment,
+          include: [RbacRole, Team],
+          ...(teamId
+            ? {
+                required: true,
+                where: {
+                  [Op.or]: [{ team_id: teamId }, { team_id: null }],
+                },
+              }
+            : {}),
+        },
+      ],
+      order: [
+        ['name', 'ASC'],
+        ['last_name', 'ASC'],
+      ],
+    });
   }
 
   /**
@@ -244,6 +257,10 @@ export class UsersService {
         {
           model: Membership,
           include: [{ model: Permission }, { model: Team }],
+        },
+        {
+          model: RoleAssignment,
+          include: [{ model: RbacRole }, { model: Team }],
         },
       ],
     });

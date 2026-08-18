@@ -15,9 +15,11 @@ const isLoaded = (state: State): boolean => {
 
 const isSuperAdmin = (state: State): boolean => {
   const user = state.auth.currentUser;
-  if (!user?.memberships) return false;
-  return user.memberships.some(
-    (m: any) => m.teams_id === 1 && m.role === 1,
+  return Boolean(
+    user?.roleAssignments?.some(
+      (assignment) =>
+        assignment.team_id === null && assignment.role?.key === 'platform-admin',
+    ),
   );
 };
 

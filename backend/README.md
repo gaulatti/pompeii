@@ -35,8 +35,17 @@ for databases whose connection URL does not request it.
 - ID tokens (`token_use=id`) are enforced
 
 There is no backend Cognito environment variable or Secrets Manager field.
-Before deploying this migration, populate both Cognito columns for the Pompeii
-application record so the admin API can authenticate its own frontend.
+The deployment workflow passes the existing public frontend Cognito variables
+to a one-shot migration container. The self-registration migration creates or
+updates Pompeii's own team and application record before replacing the running
+service; those inputs are not retained in the backend runtime environment.
+
+After the first verified identity signs in, run the **Bootstrap Platform
+Administrator** GitHub Actions workflow with that active Pompeii user ID. The
+guarded command creates the first global `platform-admin` assignment and an
+administrative audit event. It is idempotent for the same user and refuses to
+replace an existing administrator. All later role assignments use Pompeii's
+governance UI/API.
 
 ## Setup
 

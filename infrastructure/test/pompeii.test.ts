@@ -8,6 +8,7 @@ describe('PompeiiStack', () => {
   beforeAll(() => {
     process.env.HOSTED_ZONE_ID = 'Z0123456789';
     process.env.HOSTED_ZONE_NAME = 'example.com';
+    process.env.COGNITO_USER_POOL_ID = 'us-east-1_example';
 
     const app = new App();
     template = Template.fromStack(
@@ -71,9 +72,16 @@ describe('PompeiiStack', () => {
     expect(policies).not.toContain('secretsmanager:GetSecretValue');
   });
 
+  it('manages the Google email verification claim mapping', () => {
+    const resources = JSON.stringify(template.findResources('Custom::AWS'));
+    expect(resources).toContain('updateIdentityProvider');
+    expect(resources).toContain('email_verified');
+    expect(resources).toContain('us-east-1_example');
+  });
+
   it('does not provision obsolete ECR or assets resources', () => {
     template.resourceCountIs('AWS::ECR::Repository', 0);
-    template.resourceCountIs('AWS::IAM::Role', 0);
+    template.resourceCountIs('AWS::IAM::Role', 1);
     template.resourceCountIs('AWS::S3::Bucket', 1);
   });
 });

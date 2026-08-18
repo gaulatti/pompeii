@@ -12,6 +12,7 @@ import {
 } from './network';
 import { createPermissions } from './permissions';
 import { createFrontendBucket } from './storage';
+import { manageGoogleIdentityProvider } from './authentication';
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name]?.trim();
@@ -26,15 +27,24 @@ export class PompeiiStack extends cdk.Stack {
     const zoneName = requiredEnvironment('HOSTED_ZONE_NAME');
     const frontendDomain = `pompeii.${zoneName}`;
 
+    manageGoogleIdentityProvider(
+      this,
+      requiredEnvironment('COGNITO_USER_POOL_ID'),
+    );
+
     const hostedZone = createHostedZone(
       this,
       requiredEnvironment('HOSTED_ZONE_ID'),
       zoneName,
     );
-    const certificate = new Certificate(this, 'FrontendCertificate', {
-      domainName: frontendDomain,
-      validation: CertificateValidation.fromDns(hostedZone),
-    });
+    const certificate = new Certificate(
+      this,
+      `${this.stackName}FrontendCertificate`,
+      {
+        domainName: frontendDomain,
+        validation: CertificateValidation.fromDns(hostedZone),
+      },
+    );
     const frontendBucket = createFrontendBucket(this);
     const distribution = createDistribution(
       this,
@@ -44,7 +54,7 @@ export class PompeiiStack extends cdk.Stack {
     );
     createRoute53Alias(this, hostedZone, distribution);
 
-    const logGroup = new LogGroup(this, 'ServiceLogGroup', {
+    const logGroup = new LogGroup(this, `${this.stackName}ServiceLogGroup`, {
       logGroupName: '/services/pompeii',
       retention: RetentionDays.ONE_MONTH,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
@@ -54,19 +64,19 @@ export class PompeiiStack extends cdk.Stack {
     frontendBucket.grantReadWrite(githubActionsUser);
     distribution.grantCreateInvalidation(githubActionsUser);
 
-    new cdk.CfnOutput(this, 'FrontendBucketName', {
+    new cdk.CfnOutput(this, `${this.stackName}FrontendBucketName`, {
       value: frontendBucket.bucketName,
       description: 'Set GitHub variable BUCKET_NAME to this value.',
     });
-    new cdk.CfnOutput(this, 'FrontendDistributionId', {
+    new cdk.CfnOutput(this, `${this.stackName}FrontendDistributionId`, {
       value: distribution.distributionId,
       description: 'Set GitHub variable DISTRIBUTION_ID to this value.',
     });
-    new cdk.CfnOutput(this, 'FrontendFqdn', {
+    new cdk.CfnOutput(this, `${this.stackName}FrontendFqdn`, {
       value: `https://${frontendDomain}`,
       description: 'Set GitHub variable VITE_FQDN to this value.',
     });
-    new cdk.CfnOutput(this, 'ServiceLogGroupName', {
+    new cdk.CfnOutput(this, `${this.stackName}ServiceLogGroupName`, {
       value: logGroup.logGroupName,
       description: 'Set GitHub variable LOGS_GROUP to this value.',
     });

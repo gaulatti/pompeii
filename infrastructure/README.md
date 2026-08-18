@@ -12,6 +12,9 @@ It creates:
 - the retained `/services/pompeii` CloudWatch log group;
 - a scoped GitHub Actions IAM user for S3 deployment and CloudFront
   invalidation.
+- the Google identity-provider claim mapping on the existing Cognito pool,
+  including `email_verified`, so verified federated identities can be
+  provisioned safely by Pompeii.
 
 ## Inputs
 
@@ -20,6 +23,8 @@ cp .env.example .env
 ```
 
 `HOSTED_ZONE_ID` and `HOSTED_ZONE_NAME` identify the existing public zone.
+`COGNITO_USER_POOL_ID` identifies the existing shared pool. The stack manages
+the Google provider's claim mapping without creating or replacing the pool.
 
 The stack is fixed to `us-east-1`, as required for the CloudFront certificate.
 AWS/CDK credentials and `CDK_DEFAULT_ACCOUNT` come from the standard AWS CLI

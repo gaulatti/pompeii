@@ -32,6 +32,9 @@ services:
       AUTH_MODE: test
       TEST_AUTH_SECRET: pompeii-local-browser-test-secret-change-me
       ALLOWED_ORIGINS: http://localhost:5187,http://localhost:5173
+      POMPEII_COGNITO_USER_POOL_ID: us-east-1_local
+      POMPEII_COGNITO_CLIENT_ID: local-browser-tests
+      POMPEII_LOGIN_REDIRECT_ORIGIN: http://localhost:5187
     ports:
       - '3187:3187'
       - '50087:50087'

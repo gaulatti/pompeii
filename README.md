@@ -40,9 +40,11 @@ limited to an individual developer's local Git configuration.
 
 Repository secrets required by the backend workflow are `DEPLOYMENT_TOKEN`,
 `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `SECRET_ARN`, and `UNIQUE_KEY`.
-Backend repository variables are only deployment coordinates: `HTTP_PORT`,
-`GRPC_PORT`, `AWS_REGION`, and `LOGS_GROUP`. The host ports map to the fixed
-container ports; they are not application configuration.
+Backend runtime variables are only deployment coordinates: `HTTP_PORT`,
+`GRPC_PORT`, `AWS_REGION`, and `LOGS_GROUP`. The deployment also reuses the
+public frontend variables `VITE_COGNITO_USER_POOL_ID`,
+`VITE_COGNITO_CLIENT_ID`, and `VITE_FQDN` as inputs to a one-shot database
+migration container. They are not retained in the long-running backend.
 
 `SECRET_ARN` identifies the Secrets Manager entry and `UNIQUE_KEY` selects the
 Pompeii object inside it. That object contains only `DATABASE_URL` and
@@ -111,10 +113,11 @@ belong in that file.
 Run `cd backend && npm run db:migrate` when deploying schema changes.
 
 Each application row must have both `cognito_user_pool_id` and
-`cognito_client_id` populated before its tokens can be accepted. For the
-Pompeii admin application, populate those columns before deploying this
-authentication change; once access is available, administrators can manage the
-same values from the Applications screen.
+`cognito_client_id` populated before its tokens can be accepted. The
+`20260818043000-seed-pompeii-application.js` migration idempotently creates or
+updates Pompeii's own team and application record from the deployment-only
+inputs. Once access is available, administrators manage client applications
+from the Applications screen.
 
 ## Authorization
 
@@ -147,10 +150,10 @@ its `aud` claim matches the unique `applications.cognito_client_id`. New
 applications require both values, and protected application administration can
 rotate them.
 
-The migration adds both columns without guessing or copying values from
-configuration. Before cutting over authentication, populate each existing
-application record—especially the `pompeii` application—with its Cognito pool
-and app-client IDs. An unconfigured application is deliberately denied.
+The schema migration adds both columns without guessing values. A later
+self-registration migration supplies Pompeii's own values during deployment;
+other client applications are registered through the protected administration
+surface. An unconfigured application is deliberately denied.
 
 Each client application also owns `login_redirect_origins` and
 `login_redirect_schemes`. Web entries are normalized origins such as
@@ -178,6 +181,14 @@ The RBAC migration maps the legacy owner of team `1` to a global
 system-role assignments once, during migration. Membership changes do not
 modify RBAC assignments; new roles and mappings are configurable only through
 the protected governance API.
+
+On a clean database there is no legacy owner. After the first verified identity
+signs in, run the **Bootstrap Platform Administrator** GitHub Actions workflow
+with that active Pompeii user ID. Its guarded CLI creates the first global
+`platform-admin` assignment transactionally, records an administrative audit
+event, is idempotent for the same user, and refuses to replace an existing
+administrator. It is the only operator bootstrap path; do not insert role
+assignments manually. All later assignments use Pompeii Governance.
 
 ## Team Filtering
 

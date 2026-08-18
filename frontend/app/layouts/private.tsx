@@ -175,7 +175,7 @@ const PrivateLayout = () => {
   }
 
   if (isAuthenticated && isLoaded && kickoffError) {
-    const inactive = kickoffError.status === 401 || kickoffError.message.toLowerCase().includes('inactive');
+    const inactive = kickoffError.message.toLowerCase().includes('inactive');
     return (
       <main className="flex min-h-screen items-center justify-center bg-light-sand/30 px-5 py-12 dark:bg-background">
         <Card className="w-full max-w-xl" padding="lg" variant="elevated">

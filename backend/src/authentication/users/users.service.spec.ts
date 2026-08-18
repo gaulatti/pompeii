@@ -4,6 +4,10 @@ import { getModelToken } from '@nestjs/sequelize';
 import { User } from 'src/models/user.model';
 import { AccessLog } from 'src/models/access.log.model';
 import { Login } from 'src/models/login.model';
+import { Op } from 'sequelize';
+import { RbacRole } from 'src/models/rbac-role.model';
+import { RoleAssignment } from 'src/models/role-assignment.model';
+import { Team } from 'src/models/team.model';
 
 describe('UsersService', () => {
   let service: UsersService;
@@ -23,6 +27,42 @@ describe('UsersService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  it('lists the complete identity directory without requiring legacy membership', async () => {
+    const userModel = (service as any).user;
+    userModel.findAll = jest.fn().mockResolvedValue([]);
+
+    await service.listUsers();
+
+    expect(userModel.findAll).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: [
+          expect.objectContaining({
+            model: RoleAssignment,
+            include: [RbacRole, Team],
+          }),
+        ],
+      }),
+    );
+  });
+
+  it('includes global and selected-team RBAC assignments in a team scope', async () => {
+    const userModel = (service as any).user;
+    userModel.findAll = jest.fn().mockResolvedValue([]);
+
+    await service.listUsers(7);
+
+    const options = userModel.findAll.mock.calls[0][0];
+    expect(options.include[0]).toEqual(
+      expect.objectContaining({
+        model: RoleAssignment,
+        required: true,
+      }),
+    );
+    expect(options.include[0].where).toEqual(
+      expect.objectContaining({ [Op.or]: [{ team_id: 7 }, { team_id: null }] }),
+    );
   });
 
   it('provisions a verified authorization identity without assigning access', async () => {

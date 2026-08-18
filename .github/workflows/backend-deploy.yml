@@ -90,11 +90,26 @@ jobs:
             require_value "${{ vars.GRPC_PORT }}" "GRPC_PORT"
             require_value "${{ vars.AWS_REGION }}" "AWS_REGION"
             require_value "${{ vars.LOGS_GROUP }}" "LOGS_GROUP"
+            require_value "${{ vars.VITE_COGNITO_USER_POOL_ID }}" "VITE_COGNITO_USER_POOL_ID"
+            require_value "${{ vars.VITE_COGNITO_CLIENT_ID }}" "VITE_COGNITO_CLIENT_ID"
+            require_value "${{ vars.VITE_FQDN }}" "VITE_FQDN"
             require_value "${{ secrets.SECRET_ARN }}" "SECRET_ARN"
             require_value "${{ secrets.UNIQUE_KEY }}" "UNIQUE_KEY"
 
             docker login ghcr.io -u ${{ github.actor }} -p ${{ secrets.DEPLOYMENT_TOKEN }}
             docker pull ghcr.io/${{ github.repository }}-backend:latest
+
+            docker run --rm \
+              -v "$AWS_CREDS:/root/.aws:ro" \
+              -e NODE_ENV=production \
+              -e AWS_REGION="${{ vars.AWS_REGION }}" \
+              -e SECRET_ARN="${{ secrets.SECRET_ARN }}" \
+              -e UNIQUE_KEY="${{ secrets.UNIQUE_KEY }}" \
+              -e POMPEII_COGNITO_USER_POOL_ID="${{ vars.VITE_COGNITO_USER_POOL_ID }}" \
+              -e POMPEII_COGNITO_CLIENT_ID="${{ vars.VITE_COGNITO_CLIENT_ID }}" \
+              -e POMPEII_LOGIN_REDIRECT_ORIGIN="${{ vars.VITE_FQDN }}" \
+              ghcr.io/${{ github.repository }}-backend:latest \
+              node dist/run-migrations
 
             docker stop pompeii-backend || true
             docker rm pompeii-backend || true

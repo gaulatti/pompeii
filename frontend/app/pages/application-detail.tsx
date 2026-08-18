@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, Download, Plus, Upload } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Download, Plus, ShieldCheck, Upload } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { useNavigate, useParams } from 'react-router';
@@ -190,7 +190,7 @@ export default function ApplicationDetailPage() {
     try {
       const parsed = JSON.parse(await file.text());
       if (!Array.isArray(parsed)) {
-        setImportErrors(['The file must contain a JSON array of permissions.']);
+        setImportErrors(['The file must contain a JSON array of feature overrides.']);
         return;
       }
 
@@ -294,7 +294,7 @@ export default function ApplicationDetailPage() {
         <PageHeader
           className="app-page-header"
           title="Application policy"
-          description="Loading feature permissions…"
+          description="Loading feature overrides…"
         />
         <SkeletonTable rows={6} columns={4} />
       </div>
@@ -323,11 +323,14 @@ export default function ApplicationDetailPage() {
       <PageHeader
         className="app-page-header [&_h1]:font-medium"
         title={app.name}
-        description={`Feature permissions and individual authorization overrides · ${app.slug}`}
+        description={`Application identity and legacy feature overrides · ${app.slug}`}
         actions={
           <div className="flex flex-wrap gap-3">
             <Button as="a" href="/applications" size="sm" variant="ghost">
               <ArrowLeft size={14} /> Applications
+            </Button>
+            <Button as="a" href="/governance" size="sm" variant="secondary">
+              <ShieldCheck size={14} /> RBAC governance
             </Button>
             <Button
               onClick={() =>
@@ -428,12 +431,12 @@ export default function ApplicationDetailPage() {
           <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
             <Card padding="lg" variant="outlined">
               <p className="app-section-label text-desert">Feature policy</p>
-              <h2 className="mt-2 text-xl font-medium">Register permission</h2>
+              <h2 className="mt-2 text-xl font-medium">Register feature override</h2>
               <form
                 className="mt-5 grid gap-4 sm:grid-cols-[1fr_12rem_auto] sm:items-end"
                 onSubmit={createFeature}
               >
-                <Field label="Permission name" required>
+                <Field label="Feature name" required>
                   <Input
                     placeholder="Account access"
                     required
@@ -466,11 +469,11 @@ export default function ApplicationDetailPage() {
               </div>
               <h2 className="mt-2 text-xl font-medium">Import JSON</h2>
               <p className="app-secondary-copy mt-2 text-sm leading-6 text-text-secondary">
-                Validate a permission manifest and add it to this application.
+                Validate a feature manifest and add it to this application.
               </p>
               <Field
                 className="mt-5"
-                label="Permission manifest"
+                label="Feature manifest"
                 description="JSON files only. Import validates the complete file before submitting."
                 error={
                   importErrors.length
@@ -480,7 +483,7 @@ export default function ApplicationDetailPage() {
               >
                 <FileInput
                   accept="application/json,.json"
-                  aria-label="Permission manifest"
+                  aria-label="Feature manifest"
                   disabled={importing}
                   onChange={handleFileChange}
                 />
@@ -490,7 +493,7 @@ export default function ApplicationDetailPage() {
                   className="app-secondary-copy mt-3 text-sm text-text-secondary"
                   role="status"
                 >
-                  Importing permissions…
+                  Importing feature overrides…
                 </p>
               )}
             </Card>
@@ -523,38 +526,38 @@ export default function ApplicationDetailPage() {
       >
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="app-section-label text-desert">Permission registry</p>
+            <p className="app-section-label text-desert">Feature override registry</p>
             <h2
               id="permission-directory-title"
               className="mt-2 text-xl font-medium"
             >
               {filteredFeatures.length}{' '}
-              {filteredFeatures.length === 1 ? 'permission' : 'permissions'}
+              {filteredFeatures.length === 1 ? 'feature override' : 'feature overrides'}
             </h2>
           </div>
           <SearchInput
-            aria-label="Search permissions"
+            aria-label="Search feature overrides"
             className="w-full sm:w-72"
             onChange={(event) => setSearch(event.target.value)}
             onClear={() => setSearch('')}
-            placeholder="Search permission or key"
+            placeholder="Search feature or key"
             value={search}
           />
         </div>
         {filteredFeatures.length ? (
           <DataTable
-            caption={`Feature permissions for ${app.name}`}
+            caption={`Feature overrides for ${app.name}`}
             columns={columns}
             data={filteredFeatures}
             getRowKey={(feature) => String(feature.id)}
           />
         ) : (
           <Empty
-            title={search ? 'No matching permissions' : 'No permissions found'}
+            title={search ? 'No matching feature overrides' : 'No feature overrides found'}
             description={
               search
                 ? 'Clear or refine your search.'
-                : 'Register the first permission to define this application’s authorization behavior.'
+                : 'No legacy feature overrides are configured. RBAC permissions and role mappings are managed in Governance.'
             }
             action={
               search ? (

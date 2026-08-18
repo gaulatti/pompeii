@@ -23,10 +23,14 @@ export function createHostedZone(
   hostedZoneId: string,
   zoneName: string,
 ): IHostedZone {
-  return HostedZone.fromHostedZoneAttributes(stack, 'HostedZone', {
-    hostedZoneId,
-    zoneName,
-  });
+  return HostedZone.fromHostedZoneAttributes(
+    stack,
+    `${stack.stackName}HostedZone`,
+    {
+      hostedZoneId,
+      zoneName,
+    },
+  );
 }
 
 export function createDistribution(
@@ -37,11 +41,11 @@ export function createDistribution(
 ): Distribution {
   const originAccessIdentity = new OriginAccessIdentity(
     stack,
-    'DistributionOriginAccessIdentity',
+    `${stack.stackName}DistributionOriginAccessIdentity`,
   );
   frontendBucket.grantRead(originAccessIdentity);
 
-  return new Distribution(stack, 'FrontendDistribution', {
+  return new Distribution(stack, `${stack.stackName}FrontendDistribution`, {
     defaultBehavior: {
       origin: S3BucketOrigin.withOriginAccessIdentity(frontendBucket, {
         originAccessIdentity,
@@ -77,12 +81,12 @@ export function createRoute53Alias(
   distribution: Distribution,
 ): void {
   const target = RecordTarget.fromAlias(new CloudFrontTarget(distribution));
-  new ARecord(stack, 'FrontendAliasIpv4', {
+  new ARecord(stack, `${stack.stackName}FrontendAliasIpv4`, {
     zone: hostedZone,
     recordName: 'pompeii',
     target,
   });
-  new AaaaRecord(stack, 'FrontendAliasIpv6', {
+  new AaaaRecord(stack, `${stack.stackName}FrontendAliasIpv6`, {
     zone: hostedZone,
     recordName: 'pompeii',
     target,

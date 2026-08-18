@@ -1,0 +1,30 @@
+name: Bootstrap Platform Administrator
+
+on:
+  workflow_dispatch:
+    inputs:
+      user_id:
+        description: Active Pompeii user ID to promote as the first administrator
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Bootstrap the first global platform administrator
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -eu
+            case "${{ inputs.user_id }}" in
+              ''|*[!0-9]*) echo "user_id must be a positive integer"; exit 1 ;;
+            esac
+            docker exec pompeii-backend \
+              node dist/run-bootstrap-admin "${{ inputs.user_id }}"
