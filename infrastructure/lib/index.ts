@@ -4,7 +4,6 @@ import {
   CertificateValidation,
 } from 'aws-cdk-lib/aws-certificatemanager';
 import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
-import { Secret } from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 import {
   createDistribution,
@@ -25,7 +24,6 @@ export class PompeiiStack extends cdk.Stack {
     super(scope, id, props);
 
     const zoneName = requiredEnvironment('HOSTED_ZONE_NAME');
-    const secretArn = requiredEnvironment('SECRET_ARN');
     const frontendDomain = `pompeii.${zoneName}`;
 
     const hostedZone = createHostedZone(
@@ -51,17 +49,10 @@ export class PompeiiStack extends cdk.Stack {
       retention: RetentionDays.ONE_MONTH,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
-    const applicationSecret = Secret.fromSecretCompleteArn(
-      this,
-      'ApplicationSecret',
-      secretArn,
-    );
-    const { githubActionsUser, onPremisesUser } = createPermissions(this);
+    const { githubActionsUser } = createPermissions(this);
 
     frontendBucket.grantReadWrite(githubActionsUser);
     distribution.grantCreateInvalidation(githubActionsUser);
-    logGroup.grantWrite(onPremisesUser);
-    applicationSecret.grantRead(onPremisesUser);
 
     new cdk.CfnOutput(this, 'FrontendBucketName', {
       value: frontendBucket.bucketName,

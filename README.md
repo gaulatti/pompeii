@@ -29,7 +29,7 @@ or workflow and may also be started manually with `workflow_dispatch`.
 
 The [`infrastructure`](./infrastructure) package provisions Pompeii's private
 frontend bucket, CloudFront distribution, Route 53 aliases and certificate,
-`/services/pompeii` log group, and scoped GitHub/on-premises deployment users.
+`/services/pompeii` log group, and scoped GitHub frontend deployment user.
 It is self-contained and does not depend on Macondo or any private repository.
 
 All commits must follow the Conventional Commits format, such as

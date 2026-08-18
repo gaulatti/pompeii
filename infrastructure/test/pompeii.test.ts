@@ -8,8 +8,6 @@ describe('PompeiiStack', () => {
   beforeAll(() => {
     process.env.HOSTED_ZONE_ID = 'Z0123456789';
     process.env.HOSTED_ZONE_NAME = 'example.com';
-    process.env.SECRET_ARN =
-      'arn:aws:secretsmanager:us-east-1:123456789012:secret:applications-AbCdEf';
 
     const app = new App();
     template = Template.fromStack(
@@ -63,14 +61,14 @@ describe('PompeiiStack', () => {
     });
   });
 
-  it('creates scoped GitHub and on-premises deployment users', () => {
-    template.resourceCountIs('AWS::IAM::User', 2);
-    template.resourceCountIs('AWS::IAM::AccessKey', 2);
+  it('creates a scoped GitHub frontend deployment user', () => {
+    template.resourceCountIs('AWS::IAM::User', 1);
+    template.resourceCountIs('AWS::IAM::AccessKey', 1);
     const policies = JSON.stringify(template.findResources('AWS::IAM::Policy'));
     expect(policies).toContain('s3:PutObject');
     expect(policies).toContain('cloudfront:CreateInvalidation');
-    expect(policies).toContain('logs:PutLogEvents');
-    expect(policies).toContain('secretsmanager:GetSecretValue');
+    expect(policies).not.toContain('logs:PutLogEvents');
+    expect(policies).not.toContain('secretsmanager:GetSecretValue');
   });
 
   it('does not provision obsolete ECR or assets resources', () => {
