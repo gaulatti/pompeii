@@ -1,6 +1,82 @@
 import { AuthorizationGrpcController } from './authorization-grpc.controller';
 
 describe('AuthorizationGrpcController', () => {
+  it('authenticates and provisions an active identity without evaluating RBAC', async () => {
+    const identity = {
+      sub: 'poll-owner',
+      email: 'poll-owner@example.com',
+      email_verified: true,
+    };
+    const users = {
+      resolveAuthorizationUser: jest.fn().mockResolvedValue({
+        id: 61,
+        is_active: true,
+      }),
+    };
+    const rbac = {
+      resolvePermissionApplicationScope: jest.fn(),
+      authorizeUser: jest.fn(),
+    };
+    const controller = new AuthorizationGrpcController(
+      { verifyBearerToken: jest.fn().mockResolvedValue(identity) } as any,
+      users as any,
+      rbac as any,
+    );
+
+    await expect(
+      controller.authenticate({ bearer_token: 'token' }),
+    ).resolves.toEqual({
+      authenticated: true,
+      active: true,
+      reason: 'ALLOW',
+      subject: 'poll-owner',
+    });
+    expect(users.resolveAuthorizationUser).toHaveBeenCalledWith(identity);
+    expect(rbac.authorizeUser).not.toHaveBeenCalled();
+  });
+
+  it('distinguishes invalid tokens and inactive identities', async () => {
+    const invalid = new AuthorizationGrpcController(
+      {
+        verifyBearerToken: jest.fn().mockRejectedValue(new Error('invalid')),
+      } as any,
+      {} as any,
+      {} as any,
+    );
+    await expect(
+      invalid.authenticate({ bearer_token: 'bad' }),
+    ).resolves.toMatchObject({
+      authenticated: false,
+      active: false,
+      reason: 'DENY_INVALID_TOKEN',
+      subject: '',
+    });
+
+    const inactive = new AuthorizationGrpcController(
+      {
+        verifyBearerToken: jest.fn().mockResolvedValue({
+          sub: 'inactive-subject',
+          email: 'inactive@example.com',
+        }),
+      } as any,
+      {
+        resolveAuthorizationUser: jest.fn().mockResolvedValue({
+          id: 62,
+          is_active: false,
+        }),
+      } as any,
+      {} as any,
+    );
+    await expect(
+      inactive.authenticate({ bearer_token: 'token' }),
+    ).resolves.toMatchObject({
+      authenticated: true,
+      active: false,
+      reason: 'DENY_INACTIVE_USER',
+      subject: 'inactive-subject',
+    });
+  });
+
   it('returns a non-throwing denial for an invalid end-user token', async () => {
     const controller = new AuthorizationGrpcController(
       {

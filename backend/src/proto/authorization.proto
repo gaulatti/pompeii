@@ -5,7 +5,20 @@ package pompeii.authorization.v1;
 // Private service-to-service authorization API. Authorization decisions are
 // intentionally not exposed over the REST administration surface.
 service AuthorizationService {
+  rpc Authenticate(AuthenticateRequest) returns (AuthenticateResponse);
   rpc Authorize(AuthorizeRequest) returns (AuthorizeResponse);
+}
+
+message AuthenticateRequest {
+  // The end user's Cognito ID token, with or without the "Bearer " prefix.
+  string bearer_token = 1;
+}
+
+message AuthenticateResponse {
+  bool authenticated = 1;
+  bool active = 2;
+  string reason = 3;
+  string subject = 4;
 }
 
 message AuthorizeRequest {
