@@ -19,6 +19,56 @@ export class AuthorizationGrpcController {
     private readonly rbac: RbacService,
   ) {}
 
+  @GrpcMethod('AuthorizationService', 'Authenticate')
+  async authenticate(request: { bearer_token: string }) {
+    let identity: {
+      sub: string;
+      email?: string;
+      email_verified?: boolean | string;
+      given_name?: string;
+      family_name?: string;
+      name?: string;
+      identities?: { providerName?: string }[];
+    };
+    try {
+      identity = await this.tokens.verifyBearerToken(
+        request.bearer_token ?? '',
+      );
+    } catch {
+      return {
+        authenticated: false,
+        active: false,
+        reason: 'DENY_INVALID_TOKEN',
+        subject: '',
+      };
+    }
+
+    const user = await this.users.resolveAuthorizationUser(identity);
+    if (!user) {
+      return {
+        authenticated: true,
+        active: false,
+        reason: 'DENY_UNKNOWN_USER',
+        subject: identity.sub,
+      };
+    }
+    if (!user.is_active) {
+      return {
+        authenticated: true,
+        active: false,
+        reason: 'DENY_INACTIVE_USER',
+        subject: identity.sub,
+      };
+    }
+
+    return {
+      authenticated: true,
+      active: true,
+      reason: 'ALLOW',
+      subject: identity.sub,
+    };
+  }
+
   @GrpcMethod('AuthorizationService', 'Authorize')
   async authorize(request: AuthorizeRequest) {
     if (!request.permission?.trim()) {

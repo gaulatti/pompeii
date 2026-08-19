@@ -32,6 +32,11 @@ for databases whose connection URL does not request it.
   owned by an application registered for that client.
 - ID tokens (`token_use=id`) are enforced
 
+The private gRPC service exposes `Authenticate` for active identity resolution
+without an RBAC grant and `Authorize` for permission decisions. Identity-only
+client products should not create placeholder permissions merely to obtain a
+verified subject.
+
 Each application owns its Cognito registration, roles, and permission catalog.
 Roles can only map permissions from the same application. Client applications
 own their login flow and send their end-user ID token to their backend; that

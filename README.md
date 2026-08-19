@@ -121,9 +121,12 @@ from the Applications screen.
 
 ## Authorization
 
-Client services request allow/deny decisions through the private
-`pompeii.authorization.v1.AuthorizationService` gRPC API. The REST API is an
-authenticated administration surface and does not expose an authorization
+Client services verify active identities or request RBAC allow/deny decisions
+through the private `pompeii.authorization.v1.AuthorizationService` gRPC API.
+`Authenticate` validates the token, provisions the identity when eligible,
+checks active status, and returns the immutable subject without requiring a
+role. `Authorize` additionally evaluates an application permission. The REST
+API is an authenticated administration surface and does not expose either
 decision endpoint. The versioned contract is at
 `backend/src/proto/authorization.proto`.
 
@@ -134,9 +137,10 @@ its team assignments and global assignments. Decisions are denied by default
 and cached briefly.
 
 Verified identities presented by client services are registered in Pompeii on
-their first authorization request. Registration grants no permissions: an
-administrator must register the application catalog and assign one of its roles
-in Governance before the client request is allowed.
+their first authentication or authorization request. Registration grants no
+permissions. Identity-only products may use `Authenticate`; products with RBAC
+operations use `Authorize` and must register their catalog and assign roles in
+Governance.
 
 Client application permission catalogs and roles are registered by an
 administrator from the Applications and Governance screens. Catalogs can be
